@@ -280,6 +280,22 @@
   .btn-remover:active{background:rgba(224,85,85,.12);}
   .btn-add-linha{width:100%;background:none;border:1px dashed var(--border2);color:var(--blue2);border-radius:12px;
     min-height:46px;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;}
+  #camera{position:fixed;inset:0;z-index:110;background:#000;display:none;flex-direction:column;}
+  #camera.aberta{display:flex;}
+  #camera video{flex:1;min-height:0;width:100%;object-fit:contain;background:#000;}
+  #camera video.espelho{transform:scaleX(-1);}
+  .cam-topo{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 14px 10px;color:#fff;}
+  .cam-tit{flex:1;min-width:0;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cam-n{font-size:12.5px;background:rgba(255,255,255,.16);border-radius:999px;padding:3px 10px;white-space:nowrap;}
+  .cam-x{width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:18px;cursor:pointer;}
+  .cam-base{display:flex;align-items:center;justify-content:space-around;padding:18px 16px calc(22px + var(--safe-bot));}
+  .cam-disparo{width:74px;height:74px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.25);cursor:pointer;}
+  .cam-disparo:active{background:#fff;} .cam-disparo:disabled{opacity:.5;}
+  .cam-lado{min-width:76px;height:44px;border-radius:22px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:15px;font-weight:700;cursor:pointer;}
+  .cam-ok{background:var(--orange);}
+  .cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;}
+  .cam-flash.on{animation:camflash .25s ease-out;}
+  @keyframes camflash{from{opacity:.7}to{opacity:0}}
   .toggle{display:flex;gap:4px;margin-bottom:14px;background:var(--navy3);border:1px solid var(--border2);padding:4px;border-radius:14px;}
   .toggle button{flex:1;min-height:42px;border-radius:10px;border:none;background:none;color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;}
   .toggle button.sel{background:var(--orange);color:#fff;}
@@ -843,7 +859,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.2.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.3.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -1615,20 +1631,81 @@ function renderVist(){
 }
 
 /* ---------- 1. Equipamento ---------- */
-let buscaEquip = '';
+let buscaEquip = '', buscaForn = '';
+const _semAc = s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const fmtDoc = d=>{ d = String(d||'').replace(/\D/g,''); return d.length===14 ? d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5') : d.length===11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4') : d; };
+// fornecedor escolhido na vistoria (rascunhos antigos: vem do equipamento)
+function fornDaVist(){ return vist.fornecedor_id !== undefined ? vist.fornecedor_id : (vist.equipamento?.fornecedor_id || null); }
 function passoEquip(){
   const des = vist.tipo==='desmobilizacao';
+  const fid = fornDaVist(), f = fid ? Repo.fornecedor(fid) : null;
+  const nEq = fid ? Repo.equipamentos().filter(e=>e.fornecedor_id===fid).length : 0;
   return `<div class="passo-titulo">Que vistoria é essa?</div>
     <div class="seg seg-tipo"><button class="${!des?'sel':''}" onclick="mudarTipo('mobilizacao')">Mobilização<small>entrada na obra</small></button>
       <button class="${des?'sel desmob':''}" onclick="mudarTipo('desmobilizacao')">Desmobilização<small>saída da obra</small></button></div>
     ${des ? `<div class="banner-info" style="margin-bottom:12px">Na desmobilização, cada item mostra a foto da mobilização pra comparar e registrar só as <b>avarias novas</b>.</div>` : ''}
-    <div class="passo-titulo" style="font-size:16px;margin-top:6px">Equipamento</div>
-    ${vist.equipamento_id ? `<div class="resumo-equip"><div class="equip-ic">${iconeEquip(Repo.equipamento(vist.equipamento_id)||{})}</div><div style="flex:1;min-width:0"><div class="card-titulo">${esc(vist.equipamento.descricao)}</div><div class="card-sub">${esc([idEquip(vist.equipamento), vist.equipamento.fornecedor_nome].filter(Boolean).join(' · '))}</div></div><span class="selo selo-enviado">Escolhido</span></div>${infoMob()}` : ''}
-    <label class="busca" style="margin-bottom:10px"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg>
-      <input type="search" id="busca-equip" value="${esc(buscaEquip)}" placeholder="Prefixo, placa, descrição ou fornecedor" oninput="buscaEquip=this.value;atualizarListaEquip()"/></label>
-    <div id="lista-equip">${listaEquipHtml()}</div>
-    <button class="btn btn-secundario" style="margin-top:6px" onclick="abrirCadastroEquip()">+ Cadastrar equipamento que não está na lista</button>
-    <div class="barra-acao"><button class="btn" ${vist.equipamento_id?'':'disabled'} onclick="irPasso(1)">Continuar</button></div>`;
+    <div class="passo-titulo" style="font-size:16px;margin-top:6px">1. Fornecedor</div>
+    ${fid ? `<div class="resumo-equip"><div class="equip-ic">🏢</div><div style="flex:1;min-width:0"><div class="card-titulo">${esc(f?.razao_social || vist.equipamento?.fornecedor_nome || '—')}</div>
+        <div class="card-sub">${esc([fmtDoc(f?.cpf_cnpj), nEq + (nEq===1?' equipamento':' equipamentos')].filter(Boolean).join(' · '))}${f?._novo && !f.enviado ? ' · <span class="selo selo-rascunho" style="padding:2px 7px">cadastrado no app</span>' : ''}</div></div>
+        <button class="link-acao" style="flex-shrink:0" onclick="trocarForn()">Trocar</button></div>`
+    : `${vist.equipamento_id ? `<div class="ajuda alerta" style="margin:0 2px 10px">O equipamento "${esc(vist.equipamento.descricao)}" foi escolhido sem fornecedor. Escolha o fornecedor dele.</div>` : ''}
+      <label class="busca" style="margin-bottom:10px"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg>
+        <input type="search" id="busca-forn" value="${esc(buscaForn)}" placeholder="Nome, CNPJ ou CPF" oninput="buscaForn=this.value;atualizarListaForn()"/></label>
+      <div id="lista-forn">${listaFornHtml()}</div>
+      <button class="btn btn-secundario" style="margin-top:6px" onclick="abrirCadastroForn()">+ Cadastrar fornecedor que não está na lista</button>`}
+    ${fid ? `<div class="passo-titulo" style="font-size:16px;margin-top:18px">2. Equipamento</div>
+      ${vist.equipamento_id ? `<div style="margin-top:8px">${infoMob()}</div>` : ''}
+      ${nEq > 6 ? `<label class="busca" style="margin-bottom:10px"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg>
+        <input type="search" id="busca-equip" value="${esc(buscaEquip)}" placeholder="Prefixo, placa ou descrição" oninput="buscaEquip=this.value;atualizarListaEquip()"/></label>` : ''}
+      <div id="lista-equip">${listaEquipHtml()}</div>
+      <button class="btn btn-secundario" style="margin-top:6px" onclick="abrirCadastroEquip()">+ Cadastrar equipamento deste fornecedor</button>` : ''}
+    <div class="barra-acao"><button class="btn" ${vist.equipamento_id && fid ?'':'disabled'} onclick="irPasso(1)">Continuar</button></div>`;
+}
+function listaFornHtml(){
+  const q = _semAc(buscaForn).trim(), qd = buscaForn.replace(/\D/g,'');
+  const cont = {}; Repo.equipamentos().forEach(e=>{ if (e.fornecedor_id) cont[e.fornecedor_id] = (cont[e.fornecedor_id]||0)+1; });
+  let lista = Repo.fornecedores().filter(f=> q
+    ? _semAc(f.razao_social).includes(q) || (qd.length>=3 && String(f.cpf_cnpj||'').replace(/\D/g,'').includes(qd))
+    : (cont[f.id] || (f._novo && !f.enviado)));
+  lista.sort((a,b)=>(cont[b.id]||0)-(cont[a.id]||0) || String(a.razao_social).localeCompare(String(b.razao_social),'pt-BR'));
+  const total = lista.length; lista = lista.slice(0, 40);
+  if (!total) return `<div class="vazio" style="padding:20px">${q ? 'Nenhum fornecedor encontrado.<br/>Se ele ainda não está no SIGECON, cadastre abaixo.' : 'Nenhum fornecedor com equipamento ainda.<br/>Digite acima pra buscar todos.'}</div>`;
+  return (q ? '' : `<div class="ajuda" style="margin:0 2px 8px">Fornecedores com equipamento. Digite pra buscar todos.</div>`) + lista.map(f=>{
+    const n = cont[f.id]||0;
+    return `<button class="card" style="padding:11px 12px" onclick="escolherForn('${f.id}')">
+      <div class="card-linha"><div class="equip-ic">🏢</div><div style="flex:1;min-width:0">
+        <div class="card-titulo" style="font-size:14.5px">${esc(f.razao_social||'—')}</div>
+        <div class="card-sub">${esc([fmtDoc(f.cpf_cnpj), n ? n+(n===1?' equipamento':' equipamentos') : 'nenhum equipamento ainda'].filter(Boolean).join(' · '))}${f._novo && !f.enviado ? ' <span class="selo selo-rascunho" style="padding:2px 7px">cadastrado no app</span>' : ''}</div>
+      </div></div></button>`;
+  }).join('') + (total>40 ? `<div class="ajuda" style="text-align:center;margin:6px 0 12px">Mostrando 40 de ${total}. Digite pra refinar a busca.</div>` : '');
+}
+function atualizarListaForn(){ const el = document.getElementById('lista-forn'); if (el) el.innerHTML = listaFornHtml(); }
+function escolherForn(id){
+  const f = Repo.fornecedor(id); if (!f) return;
+  const antigo = vist.equipamento?.fornecedor_nome || '';
+  vist.fornecedor_id = id;
+  if (vist.equipamento_id && vist.equipamento?.fornecedor_id !== id) {
+    if (vist.equipamento?.fornecedor_id) { vist.equipamento_id = null; vist.equipamento = {}; vist.equip_novo = false; vist.vistoria_mob_id = null; }
+    else { // rascunho antigo, equipamento sem fornecedor: só completa
+      vist.equipamento.fornecedor_id = id; vist.equipamento.fornecedor_nome = f.razao_social;
+      const en = Repo.equipsNovos.find(x=>x.id===vist.equipamento_id);
+      if (en && !en.fornecedor_id) { en.fornecedor_id = id; en.fornecedor_nome = f.razao_social; en.fornecedores = { razao_social:f.razao_social }; en.nao_cadastrado = null; Repo.salvarEquipNovo(en); }
+    }
+  }
+  if (!vist.rep.empresa || vist.rep.empresa===antigo) vist.rep.empresa = f.razao_social;
+  buscaEquip = ''; buscaForn = '';
+  autosalvar(true); renderVist();
+  // só um equipamento desse fornecedor: já deixa escolhido
+  const eqs = Repo.equipamentos().filter(e=>e.fornecedor_id===id);
+  if (!vist.equipamento_id && eqs.length===1) escolherEquip(eqs[0].id);
+}
+function trocarForn(){
+  if (vist.equipamento_id && !confirm('Trocar o fornecedor? O equipamento escolhido será desmarcado.')) return;
+  const fa = Repo.fornecedor(fornDaVist());
+  if (vist.rep && fa && vist.rep.empresa===fa.razao_social) vist.rep.empresa = '';
+  vist.fornecedor_id = null; vist.equipamento_id = null; vist.equipamento = {}; vist.equip_novo = false; vist.vistoria_mob_id = null;
+  buscaForn = ''; buscaEquip = '';
+  autosalvar(true); renderVist();
 }
 function infoMob(){
   if (vist.tipo!=='desmobilizacao') return '';
@@ -1639,23 +1716,24 @@ function infoMob(){
 function mudarTipo(t){ vist.tipo = t; if (vist.equipamento_id) vincularMob(); autosalvar(); renderVist(); }
 function vincularMob(){ const m = vist.tipo==='desmobilizacao' ? Repo.ultimaMobilizacao(vist.equipamento_id) : null; vist.vistoria_mob_id = m ? m.id : null; }
 function listaEquipHtml(){
-  const q = buscaEquip.toLowerCase().trim();
-  let lista = Repo.equipamentos().filter(e=>!q || [e.descricao, e.prefixo, e.placa, e.numero_serie, e.fornecedores?.razao_social, e.fornecedor_nome, e.frota_tipos?.nome].some(x=>String(x||'').toLowerCase().includes(q)));
+  const fid = fornDaVist();
+  const q = _semAc(buscaEquip).trim();
+  let lista = Repo.equipamentos().filter(e=>e.fornecedor_id===fid && (!q || [e.descricao, e.prefixo, e.placa, e.numero_serie, e.frota_tipos?.nome].some(x=>_semAc(x).includes(q))));
   if (vist.tipo==='desmobilizacao') lista.sort((a,b)=>(Repo.ultimaMobilizacao(b.id)?1:0)-(Repo.ultimaMobilizacao(a.id)?1:0));
   const total = lista.length; lista = lista.slice(0, 60);
-  if (!total) return `<div class="vazio" style="padding:24px">Nenhum equipamento encontrado.<br/>Se ele ainda não está no SIGECON, cadastre abaixo.</div>`;
+  if (!total) return `<div class="vazio" style="padding:20px">${q ? 'Nenhum equipamento encontrado.' : 'Esse fornecedor ainda não tem equipamento cadastrado.'}<br/>Cadastre abaixo.</div>`;
   return lista.map(e=>{
     const obra = Repo.obra(Repo.cat?.mob?.[e.id]);
     const temMob = vist.tipo==='desmobilizacao' && Repo.ultimaMobilizacao(e.id);
     return `<button class="card ${vist.equipamento_id===e.id?'selecionado':''}" style="padding:11px 12px" onclick="escolherEquip('${e.id}')">
       <div class="card-linha"><div class="equip-ic">${iconeEquip(e)}</div><div style="flex:1;min-width:0">
         <div class="card-titulo" style="font-size:14.5px">${esc(e.descricao||'—')}</div>
-        <div class="card-sub">${esc([idEquip(e), e.fornecedores?.razao_social || e.fornecedor_nome].filter(Boolean).join(' · '))}</div>
+        <div class="card-sub">${esc(idEquip(e)||'')}</div>
         <div class="card-sub" style="font-size:12px">${obra?'🏗️ '+esc(obra.nome):''}${e._novo?' <span class="selo selo-rascunho" style="padding:2px 7px">cadastrado no app</span>':''}${temMob?' <span class="selo selo-desmob" style="padding:2px 7px">tem mobilização</span>':''}</div>
       </div></div></button>`;
   }).join('') + (total>60 ? `<div class="ajuda" style="text-align:center;margin:6px 0 12px">Mostrando 60 de ${total}. Digite pra refinar a busca.</div>` : '');
 }
-function atualizarListaEquip(){ document.getElementById('lista-equip').innerHTML = listaEquipHtml(); }
+function atualizarListaEquip(){ const el = document.getElementById('lista-equip'); if (el) el.innerHTML = listaEquipHtml(); }
 function snapshotEquip(e){
   return { descricao:e.descricao||'', prefixo:e.prefixo||'', placa:e.placa||'', numero_serie:e.numero_serie||'', marca:e.marca||'', modelo:e.modelo||'', ano:e.ano||'',
     tipo_nome: e.frota_tipos?.nome || '', categoria: e.frota_tipos?.categoria || e.tipo || '', fornecedor_id: e.fornecedor_id || null,
@@ -1664,36 +1742,27 @@ function snapshotEquip(e){
 function escolherEquip(id){
   const e = Repo.equipamento(id); if (!e) return;
   vist.equipamento_id = id; vist.equipamento = snapshotEquip(e); vist.equip_novo = !!e._novo;
+  if (e.fornecedor_id) vist.fornecedor_id = e.fornecedor_id;
   if (!vist.obra_id) { const o = Repo.obra(Repo.cat?.mob?.[id]) || Repo.obra(Prefs.get().obra); if (o) { vist.obra_id = o.id; vist.obra_nome = o.nome; } }
   if (!vist.rep.empresa) vist.rep.empresa = vist.equipamento.fornecedor_nome || '';
   vincularMob(); autosalvar(true); renderVist();
 }
-function abrirCadastroEquip(){
-  const forn = Repo.fornecedores(), tipos = (Repo.cat?.tipos||[]);
-  abrirModal('Cadastrar equipamento', `<div class="passo-desc">O equipamento (e o fornecedor, se for novo) entra no SIGECON quando a vistoria for enviada.</div>
-    <label class="rotulo">Fornecedor *</label>
-    <div class="campo"><select id="ce-forn" onchange="ceFornMudou()"><option value="">Escolha…</option><option value="__novo">➕ Cadastrar fornecedor novo</option>${forn.map(f=>`<option value="${f.id}">${esc(f.razao_social)}${f._novo && !f.enviado ? ' (novo)' : ''}</option>`).join('')}</select></div>
-    <div id="ce-nf" style="display:none;border:1px solid var(--border2);border-radius:14px;padding:12px 12px 2px;margin-bottom:14px">
-      <div style="font-weight:800;margin-bottom:10px">Novo fornecedor</div>
-      <div class="toggle"><button type="button" id="nf-pj" class="sel" onclick="ceTipoPessoa('PJ')">Empresa (PJ)</button><button type="button" id="nf-pf" onclick="ceTipoPessoa('PF')">Pessoa física</button></div>
-      <div class="campo"><label class="rotulo" id="nf-rot-doc">CNPJ *</label><input id="nf-doc" inputmode="numeric" placeholder="Só números" onblur="ceChecarDoc()"/></div>
-      <div class="ajuda" id="nf-aviso" style="margin:-6px 0 10px"></div>
-      <div class="campo"><label class="rotulo" id="nf-rot-nome">Razão social *</label><input id="nf-nome"/></div>
-      <div class="linha2"><div class="campo"><label class="rotulo">Telefone</label><input id="nf-tel" inputmode="tel"/></div><div class="campo"><label class="rotulo">E-mail</label><input id="nf-email" inputmode="email"/></div></div>
-      <div id="nf-rep-w"><div class="linha2"><div class="campo"><label class="rotulo">Representante legal</label><input id="nf-rep-nome"/></div><div class="campo"><label class="rotulo">CPF do representante</label><input id="nf-rep-cpf" inputmode="numeric"/></div></div></div>
-      <div class="ajuda" style="margin:0 0 10px">Documentos, dados bancários e o resto do cadastro o escritório completa depois.</div>
-    </div>
-    <label class="rotulo">Tipo de equipamento *</label>
-    <div class="campo"><select id="ce-tipo" onchange="ceAtualizarPrefixo()"><option value="">Escolha…</option>${tipos.map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('')}</select></div>
-    <div class="linha2"><div class="campo"><label class="rotulo">Prefixo</label><input id="ce-pref-base" disabled placeholder="—"/></div><div class="campo"><label class="rotulo">Número</label><input id="ce-pref-num" inputmode="numeric" placeholder="01"/></div></div>
-    <div class="linha2"><div class="campo"><label class="rotulo">Marca</label><input id="ce-marca" placeholder="Ex.: Caterpillar"/></div><div class="campo"><label class="rotulo">Modelo</label><input id="ce-modelo" placeholder="Ex.: 320D"/></div></div>
-    <div class="linha2"><div class="campo"><label class="rotulo">Ano</label><input id="ce-ano" inputmode="numeric" placeholder="2022"/></div><div class="campo"><label class="rotulo">Placa</label><input id="ce-placa" placeholder="ABC1D23" style="text-transform:uppercase"/></div></div>
-    <div class="campo"><label class="rotulo">Nº de série / chassi</label><input id="ce-serie"/></div>
-    <div class="erro-msg" id="ce-erro"></div>
-    <button class="btn" onclick="salvarCadastroEquip()">Cadastrar e escolher</button>`);
-}
+
+/* ---- cadastro de fornecedor (mesmas regras do app de imóveis) ---- */
 let _ceTipoPessoa = 'PJ', _ceDupForn = null;
-function ceFornMudou(){ document.getElementById('ce-nf').style.display = document.getElementById('ce-forn').value==='__novo' ? '' : 'none'; }
+function abrirCadastroForn(){
+  _ceTipoPessoa = 'PJ'; _ceDupForn = null;
+  const q = buscaForn.trim(), qd = q.replace(/\D/g,'');
+  abrirModal('Cadastrar fornecedor', `<div class="passo-desc">O fornecedor entra no SIGECON quando a vistoria for enviada. Documentos, dados bancários e o resto do cadastro o escritório completa depois.</div>
+    <div class="toggle"><button type="button" id="nf-pj" class="sel" onclick="ceTipoPessoa('PJ')">Empresa (PJ)</button><button type="button" id="nf-pf" onclick="ceTipoPessoa('PF')">Pessoa física</button></div>
+    <div class="campo"><label class="rotulo" id="nf-rot-doc">CNPJ *</label><input id="nf-doc" inputmode="numeric" placeholder="Só números" value="${qd.length>=11 ? esc(qd) : ''}" onblur="ceChecarDoc()"/></div>
+    <div class="ajuda" id="nf-aviso" style="margin:-6px 0 10px"></div>
+    <div class="campo"><label class="rotulo" id="nf-rot-nome">Razão social *</label><input id="nf-nome" value="${qd.length>=11 ? '' : esc(q)}"/></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Telefone</label><input id="nf-tel" inputmode="tel"/></div><div class="campo"><label class="rotulo">E-mail</label><input id="nf-email" inputmode="email"/></div></div>
+    <div id="nf-rep-w"><div class="linha2"><div class="campo"><label class="rotulo">Representante legal</label><input id="nf-rep-nome"/></div><div class="campo"><label class="rotulo">CPF do representante</label><input id="nf-rep-cpf" inputmode="numeric"/></div></div></div>
+    <div class="erro-msg" id="nf-erro"></div>
+    <button class="btn" onclick="salvarCadastroForn()">Cadastrar e escolher</button>`);
+}
 function ceTipoPessoa(t){
   _ceTipoPessoa = t;
   document.getElementById('nf-pj').classList.toggle('sel', t==='PJ'); document.getElementById('nf-pf').classList.toggle('sel', t==='PF');
@@ -1723,7 +1792,7 @@ async function fornPorDoc(d){
   const local = Repo.fornecedores().find(f=>String(f.cpf_cnpj||'').replace(/\D/g,'')===d);
   if (local) return local;
   if (!navigator.onLine) return null;
-  try { return await buscarFornPorDoc(d, null); } catch(e){ return null; } // sem checagem: o banco ainda barra no envio
+  try { return await buscarFornPorDoc(d, null); } catch(e){ return null; }
 }
 async function ceChecarDoc(){
   const el = document.getElementById('nf-aviso'); if (!el) return;
@@ -1733,41 +1802,69 @@ async function ceChecarDoc(){
   const dup = await fornPorDoc(v.digitos);
   if (dup) { _ceDupForn = dup; el.innerHTML = `⚠️ Já cadastrado: <b>${esc(dup.razao_social||'')}</b>${dup.ativo===false?' (inativo)':''}`; }
 }
+async function salvarCadastroForn(){
+  const g = id=>document.getElementById(id).value.trim(), erro = document.getElementById('nf-erro');
+  erro.textContent = '';
+  const nome = g('nf-nome'), vd = validarDoc(g('nf-doc'), _ceTipoPessoa);
+  if (!vd.ok) { erro.textContent = vd.msg; return; }
+  if (!nome) { erro.textContent = 'Informe '+(_ceTipoPessoa==='PF'?'o nome':'a razão social')+' do fornecedor.'; return; }
+  const dup = await fornPorDoc(vd.digitos);
+  if (dup) {
+    const rot = vd.digitos.length===11 ? 'CPF' : 'CNPJ';
+    if (dup.ativo===false) { erro.textContent = `Esse ${rot} é do fornecedor "${dup.razao_social||''}", que está inativo — peça pro escritório reativar.`; return; }
+    if (!confirm(`Já existe um fornecedor com esse ${rot}:\n\n${dup.razao_social||'(sem nome)'}\n\nUsar esse cadastro?`)) { erro.textContent = `Não dá pra cadastrar: o ${rot} já pertence a "${dup.razao_social||''}".`; return; }
+    if (!Repo.fornecedor(dup.id) && Repo.cat) { Repo.cat.fornecedores = [...(Repo.cat.fornecedores||[]), { id:dup.id, razao_social:dup.razao_social, cpf_cnpj:dup.cpf_cnpj }]; await BD.gravar('meta', Repo.cat, 'catalogo'); }
+    fecharModal(); escolherForn(dup.id);
+    toast('Fornecedor existente escolhido.', 'sucesso');
+    return;
+  }
+  const f = { id: uuid(), _novo: true, tipo_pessoa: _ceTipoPessoa, razao_social: nome, cpf_cnpj: vd.digitos, telefone: g('nf-tel'), email: g('nf-email'),
+    rep_nome: _ceTipoPessoa==='PJ' ? g('nf-rep-nome') : '', rep_cpf: _ceTipoPessoa==='PJ' ? g('nf-rep-cpf').replace(/\D/g,'') : '', criado_em: new Date().toISOString() };
+  await Repo.salvarFornNovo(f);
+  fecharModal(); escolherForn(f.id);
+  toast('Fornecedor cadastrado. Agora cadastre o equipamento.', 'sucesso');
+}
+
+/* ---- cadastro de equipamento (do fornecedor escolhido) ---- */
+function abrirCadastroEquip(){
+  const f = Repo.fornecedor(fornDaVist()), tipos = (Repo.cat?.tipos||[]);
+  if (!f) { toast('Escolha o fornecedor primeiro.', 'erro'); return; }
+  abrirModal('Cadastrar equipamento', `<div class="passo-desc">O equipamento entra no SIGECON quando a vistoria for enviada.</div>
+    <div class="resumo-equip" style="margin-bottom:14px"><div class="equip-ic">🏢</div><div style="flex:1;min-width:0"><div class="card-sub">Fornecedor</div><div class="card-titulo" style="font-size:14.5px">${esc(f.razao_social)}</div></div></div>
+    <label class="rotulo">Tipo de equipamento *</label>
+    <div class="campo"><select id="ce-tipo" onchange="ceAtualizarPrefixo()"><option value="">Escolha…</option>${tipos.map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('')}</select></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Prefixo</label><input id="ce-pref-base" disabled placeholder="—"/></div><div class="campo"><label class="rotulo">Número</label><input id="ce-pref-num" inputmode="numeric" placeholder="01"/></div></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Marca</label><input id="ce-marca" placeholder="Ex.: Caterpillar"/></div><div class="campo"><label class="rotulo">Modelo</label><input id="ce-modelo" placeholder="Ex.: 320D"/></div></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Ano</label><input id="ce-ano" inputmode="numeric" placeholder="2022"/></div><div class="campo"><label class="rotulo">Placa</label><input id="ce-placa" placeholder="ABC1D23" style="text-transform:uppercase"/></div></div>
+    <div class="campo"><label class="rotulo">Nº de série / chassi</label><input id="ce-serie"/></div>
+    <div class="erro-msg" id="ce-erro"></div>
+    <button class="btn" onclick="salvarCadastroEquip()">Cadastrar e escolher</button>`);
+}
 function ceAtualizarPrefixo(){ const t = Repo.tipo(document.getElementById('ce-tipo').value); document.getElementById('ce-pref-base').value = t?.prefixo || ''; }
 async function salvarCadastroEquip(){
   const g = id=>document.getElementById(id).value.trim(), erro = document.getElementById('ce-erro');
-  const fid = g('ce-forn'), tid = g('ce-tipo');
-  if (!fid) { erro.textContent = 'Escolha o fornecedor.'; return; }
+  const f = Repo.fornecedor(fornDaVist()), tid = g('ce-tipo');
+  if (!f) { erro.textContent = 'Escolha o fornecedor primeiro.'; return; }
   if (!tid) { erro.textContent = 'Escolha o tipo do equipamento.'; return; }
-  let f = fid==='__novo' ? null : Repo.fornecedor(fid), fNovo = null;
-  if (fid==='__novo') {
-    const nome = g('nf-nome'), vd = validarDoc(g('nf-doc'), _ceTipoPessoa);
-    if (!vd.ok) { erro.textContent = vd.msg; return; }
-    if (!nome) { erro.textContent = 'Informe '+(_ceTipoPessoa==='PF'?'o nome':'a razão social')+' do fornecedor.'; return; }
-    const dup = await fornPorDoc(vd.digitos);
-    if (dup) {
-      const rot = vd.digitos.length===11 ? 'CPF' : 'CNPJ';
-      if (dup.ativo===false) { erro.textContent = `Esse ${rot} é do fornecedor "${dup.razao_social||''}", que está inativo — peça pro escritório reativar.`; return; }
-      if (!confirm(`Já existe um fornecedor com esse ${rot}:\n\n${dup.razao_social||'(sem nome)'}\n\nUsar esse cadastro?`)) { erro.textContent = `O ${rot} já pertence a "${dup.razao_social||''}".`; return; }
-      if (!Repo.fornecedor(dup.id) && Repo.cat) { Repo.cat.fornecedores = [...(Repo.cat.fornecedores||[]), { id:dup.id, razao_social:dup.razao_social, cpf_cnpj:dup.cpf_cnpj }]; await BD.gravar('meta', Repo.cat, 'catalogo'); }
-      f = Repo.fornecedor(dup.id);
-    } else {
-      fNovo = { id: uuid(), _novo: true, tipo_pessoa: _ceTipoPessoa, razao_social: nome, cpf_cnpj: vd.digitos, telefone: g('nf-tel'), email: g('nf-email'),
-        rep_nome: _ceTipoPessoa==='PJ' ? g('nf-rep-nome') : '', rep_cpf: _ceTipoPessoa==='PJ' ? g('nf-rep-cpf').replace(/\D/g,'') : '', criado_em: new Date().toISOString() };
-      f = fNovo;
-    }
-  }
   const t = Repo.tipo(tid);
   const placa = g('ce-placa').toUpperCase(), serie = g('ce-serie');
-  const dup = Repo.equipamentos().find(e=>(placa && (e.placa||'').toUpperCase().replace(/\W/g,'')===placa.replace(/\W/g,'')) || (serie && (e.numero_serie||'')===serie));
-  if (dup && !confirm(`Já existe "${dup.descricao}" com essa ${placa && (dup.placa||'').toUpperCase().replace(/\W/g,'')===placa.replace(/\W/g,'') ? 'placa' : 'série'}.\n\nOK = cadastrar mesmo assim\nCancelar = voltar e escolher o que já existe`)) { fecharModal(); buscaEquip = placa || serie; renderVist(); return; }
+  const sp = x=>String(x||'').toUpperCase().replace(/\W/g,'');
+  const dup = Repo.equipamentos().find(e=>(placa && sp(e.placa)===sp(placa)) || (serie && (e.numero_serie||'')===serie));
+  if (dup) {
+    const oQue = placa && sp(dup.placa)===sp(placa) ? 'placa' : 'série';
+    const outroForn = dup.fornecedor_id !== f.id ? `\n(está no fornecedor ${dup.fornecedores?.razao_social || dup.fornecedor_nome || '—'})` : '';
+    if (!confirm(`Já existe "${dup.descricao}" com essa ${oQue}.${outroForn}\n\nOK = cadastrar mesmo assim\nCancelar = voltar`)) {
+      fecharModal();
+      if (dup.fornecedor_id === f.id) escolherEquip(dup.id);
+      return;
+    }
+  }
   const marca = g('ce-marca'), modelo = g('ce-modelo');
   const prefixo = t?.prefixo && g('ce-pref-num') ? `${t.prefixo}-${g('ce-pref-num').padStart(2,'0')}` : '';
   const descricao = [t?.nome, marca, modelo].filter(Boolean).join(' ') + (placa ? ' — '+placa : serie ? ' — '+serie : '');
-  const e = { id: uuid(), _novo: true, descricao, fornecedor_id: f?.id || null, fornecedor_nome: f?.razao_social || '', frota_tipo_id: tid, tipo: t?.categoria || 'outro',
+  const e = { id: uuid(), _novo: true, descricao, fornecedor_id: f.id, fornecedor_nome: f.razao_social, frota_tipo_id: tid, tipo: t?.categoria || 'outro',
     marca, modelo, ano: parseInt(g('ce-ano'))||null, placa, numero_serie: serie, prefixo, ativo: true,
-    frota_tipos: { nome: t?.nome, categoria: t?.categoria, foto_url: t?.foto_url||null }, fornecedores: f ? { razao_social: f.razao_social } : null, criado_em: new Date().toISOString() };
-  if (fNovo) await Repo.salvarFornNovo(fNovo);
+    frota_tipos: { nome: t?.nome, categoria: t?.categoria, foto_url: t?.foto_url||null }, fornecedores: { razao_social: f.razao_social }, criado_em: new Date().toISOString() };
   await Repo.salvarEquipNovo(e);
   fecharModal(); buscaEquip = ''; escolherEquip(e.id);
   toast('Equipamento cadastrado no celular', 'sucesso');
@@ -1918,7 +2015,66 @@ function setObs(c, v){
   atualizarCabecalhos();
 }
 function abrirObs(c){ resp(c)._obsAberta = true; rerenderItem(c); document.querySelector(`#it-${c.replace('.','-')} textarea`)?.focus(); }
-function tirarFoto(c, galeria){ window._fotoAlvo = c; document.getElementById(galeria ? 'in-galeria' : 'in-camera').click(); }
+function tirarFoto(c, galeria){
+  window._fotoAlvo = c;
+  if (galeria) { document.getElementById('in-galeria').click(); return; }
+  Camera.abrir({ titulo: `${c} ${ITEM[c].t}`, multipla: true,
+    contar: ()=>(resp(c).fotos||[]).length, limite: CONFIG.FOTOS_POR_ITEM,
+    aoCapturar: async arq=>{ window._fotoAlvo = c; await fotoEscolhida({ files:[arq], value:'' }); },
+    reserva: ()=>document.getElementById('in-camera').click() });
+}
+/* Câmera dentro do app: abre direto na TRASEIRA (o capture="environment" do
+   arquivo é ignorado por vários celulares, que abrem na última câmera usada). */
+const Camera = {
+  _s: null, _op: null, _frente: false,
+  async abrir(op){
+    this._op = op; this._frente = !!op.frontal;
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) { op.reserva && op.reserva(); return; }
+    let el = document.getElementById('camera');
+    if (!el) { el = document.createElement('div'); el.id = 'camera'; document.body.appendChild(el); }
+    el.innerHTML = `<div class="cam-topo"><button class="cam-x" onclick="Camera.fechar()" aria-label="Fechar">✕</button><div class="cam-tit">${esc(op.titulo||'')}</div><span class="cam-n" id="cam-n"></span></div>
+      <video id="cam-video" autoplay playsinline muted></video><div class="cam-flash" id="cam-flash"></div>
+      <div class="cam-base"><button class="cam-lado" onclick="Camera.virar()" aria-label="Trocar câmera">🔄</button>
+        <button class="cam-disparo" id="cam-disparo" onclick="Camera.capturar()" aria-label="Tirar foto"></button>
+        <button class="cam-lado cam-ok" onclick="Camera.fechar()">${op.multipla ? 'Pronto' : 'Cancelar'}</button></div>`;
+    el.classList.add('aberta'); document.body.style.overflow = 'hidden';
+    this._contador();
+    if (!(await this._ligar())) { this.fechar(); op.reserva && op.reserva(); }
+  },
+  async _ligar(){
+    this._parar();
+    const modo = this._frente ? 'user' : 'environment';
+    const tentativas = [
+      { video:{ facingMode:{ exact:modo }, width:{ ideal:1920 }, height:{ ideal:1440 } }, audio:false },
+      { video:{ facingMode:modo, width:{ ideal:1920 }, height:{ ideal:1440 } }, audio:false } ];
+    for (const t of tentativas) {
+      try {
+        this._s = await navigator.mediaDevices.getUserMedia(t);
+        const v = document.getElementById('cam-video'); v.srcObject = this._s; v.classList.toggle('espelho', this._frente);
+        await v.play().catch(()=>{}); return true;
+      } catch (e) { if (e && e.name==='NotAllowedError') { toast('A câmera foi bloqueada. Libere o acesso nas configurações do navegador.', 'erro'); return false; } }
+    }
+    return false;
+  },
+  async virar(){ this._frente = !this._frente; if (!(await this._ligar())) { this._frente = !this._frente; await this._ligar(); } },
+  _contador(){ const el = document.getElementById('cam-n'); if (el && this._op?.contar) el.textContent = `${this._op.contar()}/${this._op.limite} fotos`; },
+  async capturar(){
+    const v = document.getElementById('cam-video'), op = this._op; if (!v || !v.videoWidth || !op) return;
+    if (op.limite && op.contar && op.contar() >= op.limite) { toast(`Máximo de ${op.limite} fotos neste item.`, 'erro'); return; }
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+    const ctx = c.getContext('2d'); if (this._frente) { ctx.translate(c.width, 0); ctx.scale(-1, 1); } ctx.drawImage(v, 0, 0);
+    const fl = document.getElementById('cam-flash'); fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+    const blob = await new Promise(r=>c.toBlob(r, 'image/jpeg', 0.92));
+    const arq = new File([blob], `foto-${Date.now()}.jpg`, { type:'image/jpeg' });
+    const btn = document.getElementById('cam-disparo'); btn.disabled = true;
+    try { await op.aoCapturar(arq); } finally { if (btn) btn.disabled = false; }
+    this._contador();
+    if (!op.multipla || (op.limite && op.contar && op.contar() >= op.limite)) this.fechar();
+  },
+  _parar(){ if (this._s) { this._s.getTracks().forEach(t=>t.stop()); this._s = null; } },
+  fechar(){ this._parar(); const el = document.getElementById('camera'); if (el) { el.classList.remove('aberta'); el.innerHTML = ''; } document.body.style.overflow = ''; this._op = null; }
+};
+document.addEventListener('visibilitychange', ()=>{ if (document.hidden && Camera._s) Camera.fechar(); });
 async function fotoEscolhida(input){
   const c = window._fotoAlvo, arquivos = [...(input.files||[])]; input.value = '';
   if (!c || !arquivos.length || !vist) return;
@@ -2136,6 +2292,11 @@ function alternarModoDesenho(){
   document.getElementById('assin-alternar').textContent = window._modoDesenho ? 'Usar assinatura salva e selfie' : 'Sem câmera? Assinar desenhando';
   if (window._modoDesenho && !window._pad?.c?.isConnected) requestAnimationFrame(()=>{ window._pad = new PadAssinatura(document.getElementById('pad-modal')); });
 }
+function fotoRepCamera(){
+  Camera.abrir({ titulo: 'Foto do representante', multipla: false,
+    aoCapturar: async arq=>{ await fotoRepresentante({ files:[arq], value:'' }); },
+    reserva: ()=>document.getElementById('in-foto-rep').click() });
+}
 async function fotoRepresentante(input){
   const arq = input.files && input.files[0]; input.value = ''; if (!arq || !vist) return;
   try { vist.rep.foto = await reduzirFoto(arq, 480); vist.rep.foto_recusou = false; autosalvar(true); renderVist(); }
@@ -2162,10 +2323,10 @@ function passoAssinar(){
         : `<div class="pad-wrap"><canvas id="pad-rep" aria-label="Assinatura do representante"></canvas><div class="pad-linha"></div><div class="pad-dica">Assinatura do representante</div><button class="pad-limpar" onclick="window._padR.limpar()">Limpar</button></div>
            <button class="btn btn-secundario" style="margin-top:10px" onclick="confirmarAssin('rep')">Confirmar assinatura do representante</button>`}
       <label class="rotulo" style="margin-top:14px">Foto do representante</label>
-      ${r.foto ? `<div class="selfie-linha"><div class="selfie-foto"><img src="${r.foto}" alt=""/></div><div><button class="link-obs" onclick="document.getElementById('in-foto-rep').click()">tirar outra</button><br/><button class="link-obs" style="color:var(--err-txt)" onclick="vist.rep.foto=null;autosalvar(true);renderVist()">apagar</button></div></div>`
-        : r.foto_recusou ? '' : `<button class="btn btn-secundario" onclick="document.getElementById('in-foto-rep').click()">📷 Tirar foto do representante</button>`}
+      ${r.foto ? `<div class="selfie-linha"><div class="selfie-foto"><img src="${r.foto}" alt=""/></div><div><button class="link-obs" onclick="fotoRepCamera()">tirar outra</button><br/><button class="link-obs" style="color:var(--err-txt)" onclick="vist.rep.foto=null;autosalvar(true);renderVist()">apagar</button></div></div>`
+        : r.foto_recusou ? '' : `<button class="btn btn-secundario" onclick="fotoRepCamera()">📷 Tirar foto do representante</button>`}
       <label class="toggle-linha" style="margin-top:10px"><input type="checkbox" ${r.foto_recusou?'checked':''} onchange="vist.rep.foto_recusou=this.checked;if(this.checked)vist.rep.foto=null;autosalvar(true);renderVist()"/> Não quis tirar a foto</label>
-      <input type="file" id="in-foto-rep" accept="image/*" capture="user" hidden onchange="fotoRepresentante(this)"/>`}
+      <input type="file" id="in-foto-rep" accept="image/*" capture="environment" hidden onchange="fotoRepresentante(this)"/>`}
     </div>
     <div class="erro-msg" id="assin-erro"></div>
     <div class="barra-acao"><button class="btn" id="btn-concluir" onclick="concluirVistoria()">Concluir vistoria</button></div>`;
