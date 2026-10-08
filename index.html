@@ -747,7 +747,8 @@ function relatorioVistoriaHtml(v, mob){
       ${i.obs ? `<div class="rv-obs"><b>Obs.:</b> ${_rvEsc(i.obs)}</div>` : ''}
     </div>`;
   };
-  const assin = (img, nome, l2, em, vazio) => `<div class="rv-ass">${img ? `<img src="${_rvEsc(img)}" alt=""/>` : `<div class="rv-ass-vazio">${_rvEsc(vazio||'')}</div>`}<div class="rv-ass-linha"></div><b>${_rvEsc(nome||'—')}</b>${l2?`<span>${_rvEsc(l2)}</span>`:''}${em?`<span>Assinado em ${_rvData(em, true)}</span>`:''}</div>`;
+  const assin = (img, nome, l2, em, vazio, foto, l3) => `<div class="rv-ass"><div class="rv-ass-lin">${foto ? `<img class="rv-selfie" src="${_rvEsc(foto)}" alt=""/>` : ''}${img ? `<img src="${_rvEsc(img)}" alt=""/>` : `<div class="rv-ass-vazio">${_rvEsc(vazio||'')}</div>`}</div><div class="rv-ass-linha"></div><b>${_rvEsc(nome||'—')}</b>${l2?`<span>${_rvEsc(l2)}</span>`:''}${em?`<span>Assinado em ${_rvData(em, true)}</span>`:''}${l3?`<span>${_rvEsc(l3)}</span>`:''}</div>`;
+  const gpsAss = g => g && g.lat!=null ? `Local: ${g.lat}, ${g.lng}` : '';
   return `<style>
   .rv{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11px;line-height:1.35;}
   .rv table{font-size:inherit;}
@@ -794,7 +795,9 @@ function relatorioVistoriaHtml(v, mob){
   .rv-gerais{border:1px solid #d5dbe3;border-radius:6px;padding:8px;white-space:pre-wrap;}
   .rv-assin{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:10px;break-inside:avoid;page-break-inside:avoid;}
   .rv-ass{text-align:center;font-size:10px;}
-  .rv-ass img{height:60px;max-width:100%;object-fit:contain;display:block;margin:0 auto;}
+  .rv-ass-lin{display:flex;align-items:center;justify-content:center;gap:8px;height:64px;}
+  .rv-ass-lin img{height:60px;max-width:70%;object-fit:contain;display:block;}
+  .rv-ass-lin img.rv-selfie{width:58px;height:58px;max-width:none;object-fit:cover;border-radius:6px;border:1px solid #ccd3dc;}
   .rv-ass-vazio{height:60px;display:flex;align-items:center;justify-content:center;color:#888;font-style:italic;font-size:10px;}
   .rv-ass-linha{border-top:1px solid #333;margin:2px 0 3px;}
   .rv-ass b{display:block;font-size:11px;}
@@ -824,10 +827,10 @@ function relatorioVistoriaHtml(v, mob){
 
     <h2>Assinaturas</h2>
     <div class="rv-assin">
-      ${assin(v.vistoriador_assinatura, v.vistoriador_nome, 'Vistoriador — Conectrom', v.vistoriador_em)}
+      ${assin(v.vistoriador_assinatura, v.vistoriador_nome, 'Vistoriador — Conectrom' + (v.vistoriador_metodo==='assinatura_salva_e_selfie' ? ' · assinatura salva + selfie' : v.vistoriador_metodo==='desenho' ? ' · assinou desenhando' : ''), v.vistoriador_em, null, v.vistoriador_selfie, gpsAss(v.vistoriador_gps))}
       ${v.representante_recusou
-        ? assin(null, v.representante_nome || 'Representante do fornecedor', [v.representante_funcao, v.representante_empresa].filter(Boolean).join(' · '), null, 'Não assinou' + (v.representante_motivo ? ': '+v.representante_motivo : ''))
-        : assin(v.representante_assinatura, v.representante_nome, [v.representante_documento ? 'Doc.: '+v.representante_documento : '', v.representante_funcao, v.representante_empresa || e.fornecedor_nome].filter(Boolean).join(' · '), v.representante_em, 'Sem assinatura')}
+        ? assin(null, v.representante_nome || 'Representante do fornecedor', [v.representante_funcao, v.representante_empresa].filter(Boolean).join(' · '), null, 'Não assinou' + (v.representante_motivo ? ': '+v.representante_motivo : ''), v.representante_foto)
+        : assin(v.representante_assinatura, v.representante_nome, [v.representante_documento ? 'Doc.: '+v.representante_documento : '', v.representante_funcao, v.representante_empresa || e.fornecedor_nome].filter(Boolean).join(' · '), v.representante_em, 'Sem assinatura', v.representante_foto, v.representante_foto_recusou ? 'Não quis tirar foto' : '')}
     </div>
     <div class="rv-rodape"><span>Vistoria nº ${num} · ${des?'Desmobilização':'Mobilização'} · ${_rvEsc(e.descricao||'')}</span><span>Gerado em ${_rvData(new Date().toISOString(), true)}</span></div>
   </div>`;
@@ -840,7 +843,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.0.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.1.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -1123,7 +1126,7 @@ function abrirModal(titulo, html){
   document.querySelector('#modal .modal').scrollTop = 0;
   guardaHistorico();
 }
-function fecharModal(){ document.getElementById('modal').classList.remove('aberto'); }
+function fecharModal(){ document.getElementById('modal').classList.remove('aberto'); if (typeof pararCamera==='function') pararCamera(); }
 document.addEventListener('keydown', e=>{ if (e.key==='Escape') { fecharVisor(); fecharModal(); } });
 let _opcoesCb = null, _opcoesAtuais = [];
 function opcoesHtml(opcoes){
@@ -1291,6 +1294,7 @@ async function iniciarLogado(primeiraVez){
       telaMensagem('<span class="spinner"></span> Baixando equipamentos e obras');
       await comTempo(Repo.atualizarCatalogo(), 25000);
       Repo.atualizarServidor().catch(e=>console.warn('frota_vistorias:', e.message));
+      MinhaAssinatura.carregarDoSistema().catch(()=>{});
     } catch (e) {
       if (!Repo.temCatalogo()) { telaMensagem(`Não foi possível baixar os equipamentos.<br/><small>${esc(traduzErro(e))}</small><br/><br/>
         <button class="btn" onclick="iniciarLogado()">Tentar de novo</button><br/><button class="btn btn-secundario" onclick="sair(true)">Sair</button>`); return; }
@@ -1351,6 +1355,8 @@ function linhaServidor(v){
     representante_nome: v.rep?.nome || null, representante_documento: v.rep?.documento || null, representante_funcao: v.rep?.funcao || null,
     representante_empresa: v.rep?.empresa || null, representante_assinatura: v.rep?.assin?.caminho || null, representante_em: v.rep?.assin?.em || null,
     representante_recusou: !!v.rep?.recusou, representante_motivo: v.rep?.motivo || null,
+    vistoriador_selfie: v.assin_vist?.selfie_caminho || null, vistoriador_metodo: v.assin_vist?.metodo || null, vistoriador_gps: v.assin_vist?.gps || null,
+    representante_foto: v.rep?.foto_caminho || null, representante_foto_recusou: !!v.rep?.foto_recusou,
     resumo: resumoVist(v), app_versao: CONFIG.VERSAO_APP, aparelho: descricaoAparelho(),
   };
 }
@@ -1376,10 +1382,17 @@ const Sinc = {
         // assinaturas
         if (v.assin_vist?.img && !v.assin_vist.caminho) { const c = `${v.id}/assinatura-vistoriador.png`; await subirArquivo(c, await dataUrlParaBlob(v.assin_vist.img), 'image/png'); v.assin_vist.caminho = c; }
         if (v.rep?.assin?.img && !v.rep.assin.caminho) { const c = `${v.id}/assinatura-representante.png`; await subirArquivo(c, await dataUrlParaBlob(v.rep.assin.img), 'image/png'); v.rep.assin.caminho = c; }
+        if (v.assin_vist?.selfie && !v.assin_vist.selfie_caminho) { const c = `${v.id}/selfie-vistoriador.jpg`; await subirArquivo(c, await dataUrlParaBlob(v.assin_vist.selfie), 'image/jpeg'); v.assin_vist.selfie_caminho = c; }
+        if (v.rep?.foto && !v.rep.foto_caminho) { const c = `${v.id}/foto-representante.jpg`; await subirArquivo(c, await dataUrlParaBlob(v.rep.foto), 'image/jpeg'); v.rep.foto_caminho = c; }
         v._itensServidor = itens;
         const linha = linhaServidor(v);
         delete v._itensServidor;
-        const { error } = await sb.from('frota_vistorias').upsert(linha);
+        let { error } = await sb.from('frota_vistorias').upsert(linha);
+        // colunas novas (selfie/foto) ainda não criadas no banco: envia sem elas
+        if (error && /vistoriador_selfie|vistoriador_metodo|vistoriador_gps|representante_foto/.test(error.message||'')) {
+          ['vistoriador_selfie','vistoriador_metodo','vistoriador_gps','representante_foto','representante_foto_recusou'].forEach(k=>delete linha[k]);
+          ({ error } = await sb.from('frota_vistorias').upsert(linha));
+        }
         if (error) throw error;
         v.erro_envio = null; v.no_servidor = true; v.enviado_em = new Date().toISOString();
         await Repo.salvar(v, false); ok++;
@@ -1396,6 +1409,7 @@ const Sinc = {
     try {
       const { data } = await sb.auth.getSession();
       if (!data.session) { if (!silencioso) toast('Sua sessão expirou. Saia e entre de novo pra enviar.', 'erro'); return; }
+      await MinhaAssinatura.enviar().catch(()=>{});
       const r = await this.empurrar();
       await Repo.atualizarServidor().catch(()=>{});
       if (r.ok && !silencioso) toast(r.ok>1 ? r.ok+' vistorias enviadas' : 'Vistoria enviada', 'sucesso');
@@ -1485,12 +1499,14 @@ function abrirMenu(){
   escolherOpcao('Menu', [
     { ic:'🔄', rotulo:'Atualizar equipamentos e obras', sub: Repo.cat?.em ? 'Última vez: '+fmtDataHora(Repo.cat.em) : '', valor:'catalogo' },
     ...(pend ? [{ ic:'📤', rotulo:`Enviar ${pend} vistoria${pend>1?'s':''} agora`, valor:'enviar' }] : []),
+    { ic:'✍️', rotulo:'Minha assinatura', sub:'A mesma dos apps da frota e de imóveis', valor:'assinatura' },
     ...(promptInstalar ? [{ ic:'📲', rotulo:'Instalar o app', valor:'instalar' }] : []),
     { ic:'🚪', rotulo:'Sair', sub: sessao?.email||'', valor:'sair', perigo:true },
   ], async op=>{
     if (op==='catalogo') { if (!online()) return toast('Sem internet agora.', 'erro'); toast('Atualizando…'); try { await Repo.atualizarCatalogo(); await Repo.atualizarServidor(); toast('Lista atualizada', 'sucesso'); renderHome(); } catch (e) { toast(traduzErro(e), 'erro'); } }
     if (op==='enviar') Sinc.rodar();
     if (op==='instalar') instalarApp();
+    if (op==='assinatura') { const a = await MinhaAssinatura.obter(); abrirModal('Minha assinatura', a ? `<div class="assin-img" style="margin-bottom:10px"><img src="${a.imagem}" alt=""/></div><div class="passo-desc">Salva em ${fmtDataHora(a.atualizado_em)}${a.pendente?' (ainda não enviada ao sistema)':''}. Refazer vale também nos apps da frota e de imóveis, mas não muda as vistorias já assinadas.</div><button class="btn btn-secundario" onclick="abrirCadastroAssinatura()">Refazer assinatura</button>` : `<div class="passo-desc">Você ainda não cadastrou sua assinatura.</div><button class="btn" onclick="abrirCadastroAssinatura()">Cadastrar agora</button>`); }
     if (op==='sair') sair();
   }, `<div class="ajuda" style="margin:0 0 12px">Versão ${CONFIG.VERSAO_APP}</div>`);
 }
@@ -1846,49 +1862,219 @@ function irParaItem(c){
   setTimeout(()=>{ const el = document.getElementById('it-'+c.replace('.','-')); if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); el.style.boxShadow = '0 0 0 2px var(--orange)'; setTimeout(()=>el.style.boxShadow='', 1800); } }, 80);
 }
 
+
+/* =====================================================================
+   ASSINATURA SALVA + SELFIE — igual aos apps da frota e de imóveis.
+   Usa a mesma tabela (frota_assinatura_salva): quem já cadastrou a
+   assinatura num deles não precisa cadastrar de novo.
+   ===================================================================== */
+const MinhaAssinatura = {
+  chave(){ return 'assinatura_'+sessao.id; },
+  async obter(){ return await BD.pegar('meta', this.chave()); },
+  async carregarDoSistema(){
+    if (!online() || !sessao) return;
+    const local = await this.obter();
+    if (local && local.pendente) return this.enviar();
+    const { data, error } = await sb.from('frota_assinatura_salva').select('imagem,consentimento_em,atualizado_em').eq('usuario_id', sessao.id).maybeSingle();
+    if (!error && data && data.imagem) await BD.gravar('meta', data, this.chave());
+  },
+  async salvar(imagem){
+    const agora = new Date().toISOString();
+    const a = { imagem, consentimento_em: agora, atualizado_em: agora, pendente: true };
+    await BD.gravar('meta', a, this.chave());
+    this.enviar().catch(()=>{});
+    return a;
+  },
+  async enviar(){
+    const a = await this.obter(); if (!a || !a.pendente || !online()) return;
+    const { error } = await sb.from('frota_assinatura_salva').upsert({ usuario_id:sessao.id, imagem:a.imagem, consentimento_em:a.consentimento_em, atualizado_em:a.atualizado_em });
+    if (!error) { a.pendente = false; await BD.gravar('meta', a, this.chave()); }
+  },
+};
+function abrirCadastroAssinatura(depois){
+  abrirModal('Cadastre sua assinatura', `<div class="passo-desc">Você faz sua assinatura uma vez só. Depois, pra assinar cada vistoria, basta tirar uma selfie. É a mesma assinatura dos apps da frota e de imóveis.</div>
+    <div class="pad-wrap"><canvas id="pad-cad" aria-label="Área de assinatura"></canvas><div class="pad-linha"></div><div class="pad-dica">Assine aqui com o dedo</div>
+      <button class="pad-limpar" onclick="window._pad.limpar()">Limpar</button></div>
+    <label class="consentimento"><input type="checkbox" id="cad-consent"/><span>Concordo que, ao assinar uma vistoria, o app use esta assinatura e registre uma foto minha (selfie), a data, a hora e a localização, para comprovar que fui eu quem assinou. A foto fica guardada de forma privada e só a equipe do sistema pode ver.</span></label>
+    <div class="erro-msg" id="cad-erro" style="margin-top:10px"></div>
+    <button class="btn" id="cad-btn" style="margin-top:12px">Salvar assinatura</button>`);
+  requestAnimationFrame(()=>{
+    window._pad = new PadAssinatura(document.getElementById('pad-cad'));
+    document.getElementById('cad-btn').onclick = async ()=>{
+      if (!window._pad.valida()) { document.getElementById('cad-erro').textContent = 'Faça sua assinatura no quadro.'; return; }
+      if (!document.getElementById('cad-consent').checked) { document.getElementById('cad-erro').textContent = 'Marque que você concorda pra continuar.'; return; }
+      await MinhaAssinatura.salvar(window._pad.imagem());
+      toast('Assinatura salva', 'sucesso');
+      if (depois) depois(); else fecharModal();
+    };
+  });
+}
+function reduzirFoto(arquivo, max){
+  return new Promise((ok, falha)=>{
+    const url = URL.createObjectURL(arquivo), im = new Image();
+    im.onload = ()=>{
+      const f = Math.min(1, (max||320)/Math.max(im.width, im.height));
+      const c = document.createElement('canvas'); c.width = Math.round(im.width*f); c.height = Math.round(im.height*f);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg', 0.65));
+    };
+    im.onerror = ()=>{ URL.revokeObjectURL(url); falha(new Error('Não foi possível ler a foto.')); };
+    im.src = url;
+  });
+}
+function pegarLocalizacao(){
+  return new Promise(ok=>{
+    if (!navigator.geolocation) return ok({ erro:'indisponível no aparelho' });
+    navigator.geolocation.getCurrentPosition(
+      p=>ok({ lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), precisao_m:Math.round(p.coords.accuracy) }),
+      e=>ok({ erro: e.code===1 ? 'não autorizada' : 'não obtida' }),
+      { enableHighAccuracy:true, timeout:12000, maximumAge:120000 });
+  });
+}
+// Vistoriador: assinatura salva + selfie. Sem câmera, dá pra assinar desenhando.
+async function abrirAssinaturaVistoriador(){
+  const salva = await MinhaAssinatura.obter();
+  if (!salva) return abrirCadastroAssinatura(()=>abrirAssinaturaVistoriador());
+  window._selfie = null; window._modoDesenho = false;
+  abrirModal('Sua assinatura', `<div class="assin-sub" style="margin-bottom:10px">${esc(sessao.nome)} · vistoriador</div>
+    <div id="assin-selfie-box">
+      <div class="selfie-linha">
+        <div class="selfie-foto" id="selfie-prev"><span>📷</span></div>
+        <div style="flex:1;min-width:0"><div class="assin-img"><img src="${salva.imagem}" alt="Sua assinatura salva"/></div><div class="ajuda" style="margin:6px 0 0">Sua assinatura salva</div></div>
+      </div>
+      <button class="btn btn-secundario" style="margin-top:12px" id="selfie-btn" onclick="acaoSelfie()">📷 Tirar selfie</button>
+      <input type="file" id="selfie-arquivo" accept="image/*" capture="user" hidden onchange="receberSelfie(this)"/>
+    </div>
+    <div id="assin-desenho-box" style="display:none">
+      <div class="pad-wrap"><canvas id="pad-modal" aria-label="Área de assinatura"></canvas><div class="pad-linha"></div><div class="pad-dica">Assine aqui com o dedo</div>
+        <button class="pad-limpar" onclick="window._pad.limpar()">Limpar</button></div>
+    </div>
+    <div class="declaracao">Declaro que fiz esta vistoria e que as fotos e informações registradas correspondem ao estado do equipamento.</div>
+    <button class="link-acao" id="assin-alternar" onclick="alternarModoDesenho()">Sem câmera? Assinar desenhando</button>
+    <div class="erro-msg" id="pad-erro" style="margin-top:10px"></div>
+    <button class="btn" id="pad-btn" style="margin-top:12px">Assinar</button>`);
+  document.getElementById('pad-btn').onclick = async ()=>{
+    const erro = document.getElementById('pad-erro');
+    let dados;
+    if (window._modoDesenho) {
+      if (!window._pad || !window._pad.valida()) { erro.textContent = 'Faça sua assinatura no quadro.'; return; }
+      dados = { img: window._pad.imagem(), selfie:null, metodo:'desenho' };
+    } else {
+      if (!window._selfie && _cam) capturarSelfie();
+      if (!window._selfie) { erro.textContent = 'Tire a selfie pra assinar.'; return; }
+      dados = { img: salva.imagem, selfie: window._selfie, metodo:'assinatura_salva_e_selfie' };
+    }
+    const btn = document.getElementById('pad-btn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Registrando';
+    dados.em = new Date().toISOString(); dados.gps = await pegarLocalizacao();
+    vist.assin_vist = dados; autosalvar(true); fecharModal(); renderVist();
+  };
+}
+let _cam = null;
+function pararCamera(){ if (_cam) { _cam.getTracks().forEach(t=>t.stop()); _cam = null; } }
+function acaoSelfie(){ if (_cam) capturarSelfie(); else abrirCamera(); }
+async function abrirCamera(){
+  const erro = document.getElementById('pad-erro'), prev = document.getElementById('selfie-prev'), btn = document.getElementById('selfie-btn');
+  erro.textContent = '';
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      _cam = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ ideal:640 }, height:{ ideal:640 } }, audio:false });
+      prev.classList.add('ao-vivo');
+      prev.innerHTML = '<video id="selfie-video" autoplay playsinline muted></video>';
+      const v = document.getElementById('selfie-video'); v.srcObject = _cam; await v.play().catch(()=>{});
+      btn.textContent = '📸 Capturar';
+      return;
+    } catch (e) {
+      pararCamera();
+      if (e && e.name==='NotAllowedError') { erro.textContent = 'A câmera foi bloqueada. Libere o acesso à câmera nas configurações do navegador e tente de novo.'; return; }
+    }
+  }
+  if (matchMedia('(pointer: coarse)').matches) document.getElementById('selfie-arquivo').click();
+  else erro.textContent = 'Não encontramos uma câmera neste aparelho. Use "Assinar desenhando".';
+}
+function capturarSelfie(){
+  const v = document.getElementById('selfie-video'); if (!v || !v.videoWidth) return;
+  const max = 320, f = Math.min(1, max/Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth*f); c.height = Math.round(v.videoHeight*f);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  window._selfie = c.toDataURL('image/jpeg', 0.6);
+  pararCamera();
+  const prev = document.getElementById('selfie-prev'); prev.classList.remove('ao-vivo');
+  prev.innerHTML = `<img src="${window._selfie}" alt="Sua selfie"/>`;
+  document.getElementById('selfie-btn').textContent = '📷 Tirar outra';
+  document.getElementById('pad-erro').textContent = '';
+}
+async function receberSelfie(input){
+  const arq = input.files && input.files[0]; if (!arq) return;
+  try {
+    window._selfie = await reduzirFoto(arq, 320);
+    document.getElementById('selfie-prev').innerHTML = `<img src="${window._selfie}" alt="Sua selfie"/>`;
+    document.getElementById('selfie-btn').textContent = '📷 Tirar outra';
+    document.getElementById('pad-erro').textContent = '';
+  } catch (e) { document.getElementById('pad-erro').textContent = e.message; }
+  input.value = '';
+}
+function alternarModoDesenho(){
+  window._modoDesenho = !window._modoDesenho;
+  if (window._modoDesenho) pararCamera();
+  document.getElementById('assin-selfie-box').style.display = window._modoDesenho ? 'none' : '';
+  document.getElementById('assin-desenho-box').style.display = window._modoDesenho ? '' : 'none';
+  document.getElementById('assin-alternar').textContent = window._modoDesenho ? 'Usar assinatura salva e selfie' : 'Sem câmera? Assinar desenhando';
+  if (window._modoDesenho && !window._pad?.c?.isConnected) requestAnimationFrame(()=>{ window._pad = new PadAssinatura(document.getElementById('pad-modal')); });
+}
+async function fotoRepresentante(input){
+  const arq = input.files && input.files[0]; input.value = ''; if (!arq || !vist) return;
+  try { vist.rep.foto = await reduzirFoto(arq, 480); vist.rep.foto_recusou = false; autosalvar(true); renderVist(); }
+  catch (e) { toast(e.message, 'erro'); }
+}
+
 /* ---------- 5. Assinaturas ---------- */
 function passoAssinar(){
-  const r = vist.rep;
+  const r = vist.rep, a = vist.assin_vist;
   return `<div class="passo-titulo">Assinaturas</div>
-    <div class="passo-desc">O vistoriador e o representante do fornecedor assinam no celular. Depois de concluir, a vistoria não pode mais ser alterada.</div>
+    <div class="passo-desc">O vistoriador assina com a assinatura salva e uma selfie. O representante do fornecedor assina no celular e tira uma foto. Depois de concluir, a vistoria não pode mais ser alterada.</div>
     <div class="assin-card"><h4>Vistoriador</h4><div class="ajuda" style="margin:0 0 10px">${esc(vist.vistoriador_nome)} · Conectrom</div>
-      ${vist.assin_vist ? `<div class="assin-feita"><img src="${vist.assin_vist.img}" alt=""/><button class="link-obs" onclick="vist.assin_vist=null;autosalvar();renderVist()">refazer</button></div>`
-        : `<div class="pad-wrap"><canvas id="pad-vist" aria-label="Assinatura do vistoriador"></canvas><div class="pad-linha"></div><div class="pad-dica">Assine aqui com o dedo</div><button class="pad-limpar" onclick="window._padV.limpar()">Limpar</button></div>
-           <button class="btn btn-secundario" style="margin-top:10px" onclick="confirmarAssin('vist')">Confirmar minha assinatura</button>`}
+      ${a ? `<div class="assin-feita">${a.selfie?`<div class="selfie-foto pequena"><img src="${a.selfie}" alt=""/></div>`:''}<img src="${a.img}" alt=""/><div style="flex:1"><div class="ajuda" style="margin:0">${a.metodo==='desenho'?'Assinou desenhando':'Assinatura salva + selfie'} · ${fmtDataHora(a.em)}</div><button class="link-obs" onclick="vist.assin_vist=null;autosalvar(true);renderVist()">refazer</button></div></div>`
+          : `<button class="btn btn-secundario" onclick="abrirAssinaturaVistoriador()">✍️ Assinar como vistoriador</button>`}
     </div>
     <div class="assin-card"><h4>Representante do fornecedor</h4><div class="ajuda" style="margin:0 0 10px">Operador ou responsável que entregou / recebeu o equipamento.</div>
-      <label class="toggle-linha"><input type="checkbox" ${r.recusou?'checked':''} onchange="vist.rep.recusou=this.checked;if(this.checked)vist.rep.assin=null;autosalvar();renderVist()"/> Não está presente ou não quis assinar</label>
+      <label class="toggle-linha"><input type="checkbox" ${r.recusou?'checked':''} onchange="vist.rep.recusou=this.checked;if(this.checked)vist.rep.assin=null;autosalvar(true);renderVist()"/> Não está presente ou não quis assinar</label>
       <div class="campo"><input placeholder="Nome completo${r.recusou?'':' *'}" value="${esc(r.nome)}" oninput="vist.rep.nome=this.value;autosalvar()"/></div>
       ${r.recusou ? `<div class="campo"><textarea placeholder="Motivo *" oninput="vist.rep.motivo=this.value;autosalvar()">${esc(r.motivo)}</textarea></div>` : `
       <div class="linha2"><div class="campo"><input placeholder="CPF ou RG" value="${esc(r.documento)}" oninput="vist.rep.documento=this.value;autosalvar()"/></div><div class="campo"><input placeholder="Função" value="${esc(r.funcao)}" oninput="vist.rep.funcao=this.value;autosalvar()"/></div></div>
       <div class="campo"><input placeholder="Empresa" value="${esc(r.empresa)}" oninput="vist.rep.empresa=this.value;autosalvar()"/></div>
-      ${r.assin ? `<div class="assin-feita"><img src="${r.assin.img}" alt=""/><button class="link-obs" onclick="vist.rep.assin=null;autosalvar();renderVist()">refazer</button></div>`
+      <label class="rotulo" style="margin-top:4px">Assinatura</label>
+      ${r.assin ? `<div class="assin-feita"><img src="${r.assin.img}" alt=""/><button class="link-obs" onclick="vist.rep.assin=null;autosalvar(true);renderVist()">refazer</button></div>`
         : `<div class="pad-wrap"><canvas id="pad-rep" aria-label="Assinatura do representante"></canvas><div class="pad-linha"></div><div class="pad-dica">Assinatura do representante</div><button class="pad-limpar" onclick="window._padR.limpar()">Limpar</button></div>
-           <button class="btn btn-secundario" style="margin-top:10px" onclick="confirmarAssin('rep')">Confirmar assinatura do representante</button>`}`}
+           <button class="btn btn-secundario" style="margin-top:10px" onclick="confirmarAssin('rep')">Confirmar assinatura do representante</button>`}
+      <label class="rotulo" style="margin-top:14px">Foto do representante</label>
+      ${r.foto ? `<div class="selfie-linha"><div class="selfie-foto"><img src="${r.foto}" alt=""/></div><div><button class="link-obs" onclick="document.getElementById('in-foto-rep').click()">tirar outra</button><br/><button class="link-obs" style="color:var(--err-txt)" onclick="vist.rep.foto=null;autosalvar(true);renderVist()">apagar</button></div></div>`
+        : r.foto_recusou ? '' : `<button class="btn btn-secundario" onclick="document.getElementById('in-foto-rep').click()">📷 Tirar foto do representante</button>`}
+      <label class="toggle-linha" style="margin-top:10px"><input type="checkbox" ${r.foto_recusou?'checked':''} onchange="vist.rep.foto_recusou=this.checked;if(this.checked)vist.rep.foto=null;autosalvar(true);renderVist()"/> Não quis tirar a foto</label>
+      <input type="file" id="in-foto-rep" accept="image/*" capture="user" hidden onchange="fotoRepresentante(this)"/>`}
     </div>
     <div class="erro-msg" id="assin-erro"></div>
     <div class="barra-acao"><button class="btn" id="btn-concluir" onclick="concluirVistoria()">Concluir vistoria</button></div>`;
 }
 function ligarPads(){
-  const v = document.getElementById('pad-vist'), r = document.getElementById('pad-rep');
-  window._padV = v ? new PadAssinatura(v) : null; window._padR = r ? new PadAssinatura(r) : null;
+  const r = document.getElementById('pad-rep');
+  window._padR = r ? new PadAssinatura(r) : null;
 }
 function confirmarAssin(quem){
-  const pad = quem==='vist' ? window._padV : window._padR;
+  const pad = window._padR;
   if (!pad || !pad.valida()) { toast('A assinatura está muito curta. Assine de novo.', 'erro'); return; }
-  if (quem==='rep' && !vist.rep.nome.trim()) { toast('Escreva o nome do representante antes.', 'erro'); return; }
-  const a = { img: pad.imagem(), em: new Date().toISOString() };
-  if (quem==='vist') vist.assin_vist = a; else vist.rep.assin = a;
+  if (!vist.rep.nome.trim()) { toast('Escreva o nome do representante antes.', 'erro'); return; }
+  vist.rep.assin = { img: pad.imagem(), em: new Date().toISOString() };
   autosalvar(true); renderVist();
 }
 async function concluirVistoria(){
   const erro = document.getElementById('assin-erro'); erro.textContent = '';
   const faltam = ITENS.filter(i=>!itemCompleto(i));
   if (faltam.length) { erro.textContent = `Faltam ${faltam.length} itens no checklist.`; return; }
-  if (!vist.assin_vist) { erro.textContent = 'Falta a assinatura do vistoriador (toque em "Confirmar minha assinatura").'; return; }
+  if (!vist.assin_vist) { erro.textContent = 'Falta a assinatura do vistoriador (toque em "Assinar como vistoriador").'; return; }
   const r = vist.rep;
   if (r.recusou) { if (!(r.motivo||'').trim()) { erro.textContent = 'Escreva o motivo de o representante não assinar.'; return; } }
-  else { if (!r.nome.trim()) { erro.textContent = 'Escreva o nome do representante.'; return; } if (!r.assin) { erro.textContent = 'Falta a assinatura do representante (ou marque que ele não assinou).'; return; } }
+  else { if (!r.nome.trim()) { erro.textContent = 'Escreva o nome do representante.'; return; } if (!r.assin) { erro.textContent = 'Falta a assinatura do representante (ou marque que ele não assinou).'; return; }
+    if (!r.foto && !r.foto_recusou) { erro.textContent = 'Tire a foto do representante (ou marque que ele não quis tirar a foto).'; return; } }
   if (!confirm('Concluir a vistoria? Depois disso ela não pode mais ser alterada.')) return;
   vist.horimetro = vist.resp['1.3']?.sit==='na' ? null : (vist.resp['1.3']?.valor ?? null);
   vist.hodometro = vist.resp['1.4']?.sit==='na' ? null : (vist.resp['1.4']?.valor ?? null);
@@ -1917,14 +2103,17 @@ async function relDeLocal(v){
     horimetro: v.horimetro ?? (v.resp['1.3']?.sit!=='na' ? v.resp['1.3']?.valor : null), hodometro: v.hodometro ?? (v.resp['1.4']?.sit!=='na' ? v.resp['1.4']?.valor : null),
     itens, observacoes:v.observacoes, vistoriador_nome:v.vistoriador_nome,
     vistoriador_assinatura: v.assin_vist?.img || await urlAssinada(v.assin_vist?.caminho), vistoriador_em: v.assin_vist?.em,
+    vistoriador_selfie: v.assin_vist?.selfie || await urlAssinada(v.assin_vist?.selfie_caminho), vistoriador_metodo: v.assin_vist?.metodo, vistoriador_gps: v.assin_vist?.gps,
+    representante_foto: v.rep?.foto || await urlAssinada(v.rep?.foto_caminho), representante_foto_recusou: v.rep?.foto_recusou,
     representante_nome:v.rep?.nome, representante_documento:v.rep?.documento, representante_funcao:v.rep?.funcao, representante_empresa:v.rep?.empresa,
     representante_assinatura: v.rep?.assin?.img || await urlAssinada(v.rep?.assin?.caminho), representante_em: v.rep?.assin?.em,
     representante_recusou: v.rep?.recusou, representante_motivo: v.rep?.motivo };
 }
 async function relDeServidor(s){
-  const caminhos = []; (s.itens||[]).forEach(i=>(i.fotos||[]).forEach(c=>caminhos.push(c))); [s.vistoriador_assinatura, s.representante_assinatura].forEach(c=>c && caminhos.push(c));
+  const caminhos = []; (s.itens||[]).forEach(i=>(i.fotos||[]).forEach(c=>caminhos.push(c))); [s.vistoriador_assinatura, s.representante_assinatura, s.vistoriador_selfie, s.representante_foto].forEach(c=>c && caminhos.push(c));
   const u = await urlsAssinadas(caminhos);
-  return Object.assign({}, s, { itens:(s.itens||[]).map(i=>Object.assign({}, i, { fotos:(i.fotos||[]).map(u).filter(Boolean) })), vistoriador_assinatura:u(s.vistoriador_assinatura), representante_assinatura:u(s.representante_assinatura) });
+  return Object.assign({}, s, { itens:(s.itens||[]).map(i=>Object.assign({}, i, { fotos:(i.fotos||[]).map(u).filter(Boolean) })), vistoriador_assinatura:u(s.vistoriador_assinatura), representante_assinatura:u(s.representante_assinatura),
+    vistoriador_selfie:u(s.vistoriador_selfie), representante_foto:u(s.representante_foto) });
 }
 async function relatorioDe(id, rascunho){
   const local = rascunho || Repo.vistoria(id);
