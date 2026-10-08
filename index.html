@@ -843,7 +843,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.1.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.2.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -956,19 +956,20 @@ const Prefs = {
    REPO — catálogo do SIGECON + vistorias do celular e do servidor
    ===================================================================== */
 const Repo = {
-  cat: null, _vist: [], servidor: [], equipsNovos: [],
+  cat: null, _vist: [], servidor: [], equipsNovos: [], fornsNovos: [],
   async iniciar(){
     await BD.abrir();
     this._vist = await BD.todos('vistorias') || [];
     this.cat = await BD.pegar('meta', 'catalogo') || null;
     this.servidor = await BD.pegar('meta', 'servidor') || [];
     this.equipsNovos = await BD.pegar('meta', 'equips_novos') || [];
+    this.fornsNovos = await BD.pegar('meta', 'forns_novos') || [];
   },
   temCatalogo(){ return !!(this.cat && this.cat.equipamentos); },
   async atualizarCatalogo(){
     const [eq, fo, ti, ob, ca] = await Promise.all([
       sb.from('equipamentos').select('id,descricao,prefixo,placa,numero_serie,marca,modelo,ano,tipo,ativo,fornecedor_id,frota_tipo_id,fornecedores(razao_social),frota_tipos!equipamentos_frota_tipo_id_fkey(id,nome,categoria,foto_url)').order('descricao'),
-      sb.from('fornecedores').select('id,razao_social').eq('ativo', true).order('razao_social'),
+      sb.from('fornecedores').select('id,razao_social,cpf_cnpj').eq('ativo', true).order('razao_social'),
       sb.from('frota_tipos').select('id,nome,categoria,prefixo,foto_url').eq('ativo', true).order('nome'),
       sb.from('obras').select('id,nome').eq('status', 'ativa').order('nome'),
       sb.from('contrato_ativos').select('equipamento_id,contratos(obra_id)').eq('status', 'ativo').not('equipamento_id', 'is', null),
@@ -988,7 +989,11 @@ const Repo = {
   },
   equipamentos(){ return [...(this.cat?.equipamentos||[]).filter(e=>e.ativo!==false), ...this.equipsNovos]; },
   equipamento(id){ return this.equipamentos().find(e=>e.id===id) || (this.cat?.equipamentos||[]).find(e=>e.id===id) || null; },
-  fornecedor(id){ return (this.cat?.fornecedores||[]).find(f=>f.id===id) || null; },
+  fornecedores(){ const ids = new Set((this.cat?.fornecedores||[]).map(f=>f.id)); return [...(this.cat?.fornecedores||[]), ...this.fornsNovos.filter(f=>!ids.has(f.id))].sort((a,b)=>String(a.razao_social).localeCompare(String(b.razao_social),'pt-BR')); },
+  fornecedor(id){ return this.fornecedores().find(f=>f.id===id) || null; },
+  async salvarFornNovo(f){ this.fornsNovos = this.fornsNovos.filter(x=>x.id!==f.id); this.fornsNovos.push(f); await BD.gravar('meta', this.fornsNovos, 'forns_novos'); },
+  // fornecedor cadastrado no celular que ainda não subiu (não pode ir como referência pro banco)
+  fornPendente(id){ const f = this.fornsNovos.find(x=>x.id===id); return !!(f && !f.enviado); },
   tipo(id){ return (this.cat?.tipos||[]).find(t=>t.id===id) || null; },
   obra(id){ return (this.cat?.obras||[]).find(o=>o.id===id) || null; },
   obras(){ return this.cat?.obras || []; },
@@ -1327,9 +1332,51 @@ async function subirArquivo(caminho, blob, tipo){
   const { error } = await sb.storage.from(CONFIG.BUCKET).upload(caminho, blob, { contentType: tipo, upsert:false });
   if (error && !/exist|duplicate/i.test(error.message||'')) throw error;
 }
+// Fornecedor cadastrado no celular: sobe antes do equipamento.
+// Mesma lógica do app de imóveis: se já subiu numa tentativa anterior, segue;
+// se outra pessoa cadastrou o mesmo CPF/CNPJ enquanto estava offline, usa o existente.
+async function buscarFornPorDoc(d, ignorarId){
+  const fmt = d.length===11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4') : d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,'$1.$2.$3/$4-$5');
+  const { data, error } = await sb.from('fornecedores').select('id,razao_social,ativo,cpf_cnpj').or(`cpf_cnpj.eq.${d},cpf_cnpj.eq."${fmt}"`).limit(5);
+  if (error) throw error;
+  return (data||[]).find(f=>f.id!==ignorarId) || null;
+}
+async function trocarFornecedor(de, para, nome){
+  for (const e of Repo.equipsNovos.filter(x=>x.fornecedor_id===de)) { e.fornecedor_id = para; if (nome) { e.fornecedor_nome = nome; e.fornecedores = { razao_social:nome }; } await Repo.salvarEquipNovo(e); }
+  for (const v of Repo.vistorias().filter(x=>x.equipamento?.fornecedor_id===de)) { v.equipamento.fornecedor_id = para; if (nome) v.equipamento.fornecedor_nome = nome; await Repo.salvar(v); }
+}
+async function enviarFornNovo(id){
+  const f = Repo.fornsNovos.find(x=>x.id===id);
+  if (!f || f.enviado) return null;
+  const linha = { id:f.id, tipo_pessoa:f.tipo_pessoa, razao_social:f.razao_social, cpf_cnpj:f.cpf_cnpj, email:f.email||null, telefone:f.telefone||null, ativo:true, criado_por:sessao.id };
+  const { error } = await sb.from('fornecedores').insert(linha);
+  if (error) {
+    let resolvido = false;
+    if (error.code==='23505') {
+      const { data: ja } = await sb.from('fornecedores').select('id').eq('id', f.id).maybeSingle();
+      if (ja) resolvido = true;
+      else {
+        const ex = await buscarFornPorDoc(f.cpf_cnpj, f.id).catch(()=>null);
+        if (ex) { await trocarFornecedor(f.id, ex.id, ex.razao_social); f.enviado = true; f.usado_id = ex.id; await Repo.salvarFornNovo(f); toast(`"${ex.razao_social}" já estava cadastrado — usei o cadastro existente.`, 'sucesso'); return null; }
+      }
+    }
+    if (!resolvido) return 'Fornecedor: ' + traduzErro(error);
+  }
+  f.enviado = true; await Repo.salvarFornNovo(f);
+  // representante legal (PJ) vira sócio, como no app de imóveis — se falhar, não trava a vistoria
+  if (f.rep_nome && !f.socio_ok) {
+    const r = await sb.from('fornecedor_socios').insert({ id:uuid(), fornecedor_id:f.id, nome:f.rep_nome, qualificacao:'Representante Legal', cpf_cnpj_socio:f.rep_cpf||null, email:null, telefone:null, criado_por:sessao.id });
+    if (!r.error || r.error.code==='23505') { f.socio_ok = true; await Repo.salvarFornNovo(f); }
+  }
+  return null;
+}
 async function cadastrarEquipNoSistema(v){
   const e = Repo.equipsNovos.find(x=>x.id===v.equipamento_id);
   if (!e || e.cadastrado || e.nao_cadastrado) return;
+  if (e.fornecedor_id && Repo.fornPendente(e.fornecedor_id)) {
+    const falha = await enviarFornNovo(e.fornecedor_id);
+    if (falha) { e.nao_cadastrado = falha; await Repo.salvarEquipNovo(e); return; }
+  }
   if (!e.fornecedor_id) { e.nao_cadastrado = 'Fornecedor não está cadastrado no SIGECON.'; await Repo.salvarEquipNovo(e); return; }
   const linha = { id:e.id, descricao:e.descricao, fornecedor_id:e.fornecedor_id, frota_tipo_id:e.frota_tipo_id||null, tipo:e.tipo||'outro',
     marca:e.marca||null, modelo:e.modelo||null, ano:e.ano||null, placa:e.placa||null, numero_serie:e.numero_serie||null, prefixo:e.prefixo||null, ativo:true };
@@ -1346,7 +1393,7 @@ function linhaServidor(v){
     equipamento_id: semCadastro ? null : v.equipamento_id,
     vistoria_mob_id: v.vistoria_mob_id || null,
     obra_id: v.obra_id || null, obra_nome: v.obra_nome || null,
-    fornecedor_id: e.fornecedor_id || null,
+    fornecedor_id: (e.fornecedor_id && !Repo.fornPendente(e.fornecedor_id)) ? e.fornecedor_id : null,
     equipamento: Object.assign({}, e, semCadastro ? { nao_cadastrado:true, motivo:novo.nao_cadastrado||'' } : {}),
     data_vistoria: v.data_vistoria, horimetro: v.horimetro ?? null, hodometro: v.hodometro ?? null,
     local: v.local || null, latitude: v.latitude ?? null, longitude: v.longitude ?? null,
@@ -1622,11 +1669,20 @@ function escolherEquip(id){
   vincularMob(); autosalvar(true); renderVist();
 }
 function abrirCadastroEquip(){
-  const forn = (Repo.cat?.fornecedores||[]), tipos = (Repo.cat?.tipos||[]);
-  abrirModal('Cadastrar equipamento', `<div class="passo-desc">O equipamento entra no SIGECON quando a vistoria for enviada. Se o fornecedor não estiver na lista, a vistoria vai sem o cadastro e o escritório completa depois.</div>
+  const forn = Repo.fornecedores(), tipos = (Repo.cat?.tipos||[]);
+  abrirModal('Cadastrar equipamento', `<div class="passo-desc">O equipamento (e o fornecedor, se for novo) entra no SIGECON quando a vistoria for enviada.</div>
     <label class="rotulo">Fornecedor *</label>
-    <div class="campo"><select id="ce-forn" onchange="document.getElementById('ce-forn-outro-w').style.display=this.value==='__outro'?'':'none'"><option value="">Escolha…</option>${forn.map(f=>`<option value="${f.id}">${esc(f.razao_social)}</option>`).join('')}<option value="__outro">➕ Não está na lista</option></select></div>
-    <div class="campo" id="ce-forn-outro-w" style="display:none"><input id="ce-forn-outro" placeholder="Nome do fornecedor"/></div>
+    <div class="campo"><select id="ce-forn" onchange="ceFornMudou()"><option value="">Escolha…</option><option value="__novo">➕ Cadastrar fornecedor novo</option>${forn.map(f=>`<option value="${f.id}">${esc(f.razao_social)}${f._novo && !f.enviado ? ' (novo)' : ''}</option>`).join('')}</select></div>
+    <div id="ce-nf" style="display:none;border:1px solid var(--border2);border-radius:14px;padding:12px 12px 2px;margin-bottom:14px">
+      <div style="font-weight:800;margin-bottom:10px">Novo fornecedor</div>
+      <div class="toggle"><button type="button" id="nf-pj" class="sel" onclick="ceTipoPessoa('PJ')">Empresa (PJ)</button><button type="button" id="nf-pf" onclick="ceTipoPessoa('PF')">Pessoa física</button></div>
+      <div class="campo"><label class="rotulo" id="nf-rot-doc">CNPJ *</label><input id="nf-doc" inputmode="numeric" placeholder="Só números" onblur="ceChecarDoc()"/></div>
+      <div class="ajuda" id="nf-aviso" style="margin:-6px 0 10px"></div>
+      <div class="campo"><label class="rotulo" id="nf-rot-nome">Razão social *</label><input id="nf-nome"/></div>
+      <div class="linha2"><div class="campo"><label class="rotulo">Telefone</label><input id="nf-tel" inputmode="tel"/></div><div class="campo"><label class="rotulo">E-mail</label><input id="nf-email" inputmode="email"/></div></div>
+      <div id="nf-rep-w"><div class="linha2"><div class="campo"><label class="rotulo">Representante legal</label><input id="nf-rep-nome"/></div><div class="campo"><label class="rotulo">CPF do representante</label><input id="nf-rep-cpf" inputmode="numeric"/></div></div></div>
+      <div class="ajuda" style="margin:0 0 10px">Documentos, dados bancários e o resto do cadastro o escritório completa depois.</div>
+    </div>
     <label class="rotulo">Tipo de equipamento *</label>
     <div class="campo"><select id="ce-tipo" onchange="ceAtualizarPrefixo()"><option value="">Escolha…</option>${tipos.map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('')}</select></div>
     <div class="linha2"><div class="campo"><label class="rotulo">Prefixo</label><input id="ce-pref-base" disabled placeholder="—"/></div><div class="campo"><label class="rotulo">Número</label><input id="ce-pref-num" inputmode="numeric" placeholder="01"/></div></div>
@@ -1636,23 +1692,82 @@ function abrirCadastroEquip(){
     <div class="erro-msg" id="ce-erro"></div>
     <button class="btn" onclick="salvarCadastroEquip()">Cadastrar e escolher</button>`);
 }
+let _ceTipoPessoa = 'PJ', _ceDupForn = null;
+function ceFornMudou(){ document.getElementById('ce-nf').style.display = document.getElementById('ce-forn').value==='__novo' ? '' : 'none'; }
+function ceTipoPessoa(t){
+  _ceTipoPessoa = t;
+  document.getElementById('nf-pj').classList.toggle('sel', t==='PJ'); document.getElementById('nf-pf').classList.toggle('sel', t==='PF');
+  document.getElementById('nf-rot-doc').textContent = t==='PF' ? 'CPF *' : 'CNPJ *';
+  document.getElementById('nf-rot-nome').textContent = t==='PF' ? 'Nome *' : 'Razão social *';
+  document.getElementById('nf-rep-w').style.display = t==='PJ' ? '' : 'none';
+  ceChecarDoc();
+}
+// mesma validação do app de imóveis (dígitos verificadores)
+function validarDoc(valor, tipo){
+  const d = String(valor||'').replace(/\D/g,'');
+  if (!d) return { ok:false, msg:'Informe o '+(tipo==='PF'?'CPF':'CNPJ')+' — é obrigatório pra evitar cadastro duplicado.' };
+  if (tipo==='PF' && d.length!==11) return { ok:false, msg:'CPF precisa ter 11 números.' };
+  if (tipo==='PJ' && d.length!==14) return { ok:false, msg:'CNPJ precisa ter 14 números.' };
+  if (/^(\d)\1+$/.test(d)) return { ok:false, msg:(d.length===11?'CPF':'CNPJ')+' inválido.' };
+  if (d.length===11) {
+    const dv = n=>{ let s=0; for (let i=0;i<n;i++) s += +d[i]*(n+1-i); const r=(s*10)%11; return r===10?0:r; };
+    if (dv(9)!==+d[9] || dv(10)!==+d[10]) return { ok:false, msg:'CPF inválido — confira os números.' };
+  } else {
+    const dv = n=>{ const p = n===12?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2]; let s=0; for (let i=0;i<n;i++) s += +d[i]*p[i]; const r=s%11; return r<2?0:11-r; };
+    if (dv(12)!==+d[12] || dv(13)!==+d[13]) return { ok:false, msg:'CNPJ inválido — confira os números.' };
+  }
+  return { ok:true, digitos:d };
+}
+// já existe fornecedor com esse CPF/CNPJ (no celular ou no sistema)?
+async function fornPorDoc(d){
+  const local = Repo.fornecedores().find(f=>String(f.cpf_cnpj||'').replace(/\D/g,'')===d);
+  if (local) return local;
+  if (!navigator.onLine) return null;
+  try { return await buscarFornPorDoc(d, null); } catch(e){ return null; } // sem checagem: o banco ainda barra no envio
+}
+async function ceChecarDoc(){
+  const el = document.getElementById('nf-aviso'); if (!el) return;
+  el.textContent = ''; _ceDupForn = null;
+  const v = validarDoc(document.getElementById('nf-doc').value, _ceTipoPessoa);
+  if (!v.ok) return;
+  const dup = await fornPorDoc(v.digitos);
+  if (dup) { _ceDupForn = dup; el.innerHTML = `⚠️ Já cadastrado: <b>${esc(dup.razao_social||'')}</b>${dup.ativo===false?' (inativo)':''}`; }
+}
 function ceAtualizarPrefixo(){ const t = Repo.tipo(document.getElementById('ce-tipo').value); document.getElementById('ce-pref-base').value = t?.prefixo || ''; }
 async function salvarCadastroEquip(){
   const g = id=>document.getElementById(id).value.trim(), erro = document.getElementById('ce-erro');
   const fid = g('ce-forn'), tid = g('ce-tipo');
   if (!fid) { erro.textContent = 'Escolha o fornecedor.'; return; }
-  if (fid==='__outro' && !g('ce-forn-outro')) { erro.textContent = 'Escreva o nome do fornecedor.'; return; }
   if (!tid) { erro.textContent = 'Escolha o tipo do equipamento.'; return; }
-  const t = Repo.tipo(tid), f = fid==='__outro' ? null : Repo.fornecedor(fid);
+  let f = fid==='__novo' ? null : Repo.fornecedor(fid), fNovo = null;
+  if (fid==='__novo') {
+    const nome = g('nf-nome'), vd = validarDoc(g('nf-doc'), _ceTipoPessoa);
+    if (!vd.ok) { erro.textContent = vd.msg; return; }
+    if (!nome) { erro.textContent = 'Informe '+(_ceTipoPessoa==='PF'?'o nome':'a razão social')+' do fornecedor.'; return; }
+    const dup = await fornPorDoc(vd.digitos);
+    if (dup) {
+      const rot = vd.digitos.length===11 ? 'CPF' : 'CNPJ';
+      if (dup.ativo===false) { erro.textContent = `Esse ${rot} é do fornecedor "${dup.razao_social||''}", que está inativo — peça pro escritório reativar.`; return; }
+      if (!confirm(`Já existe um fornecedor com esse ${rot}:\n\n${dup.razao_social||'(sem nome)'}\n\nUsar esse cadastro?`)) { erro.textContent = `O ${rot} já pertence a "${dup.razao_social||''}".`; return; }
+      if (!Repo.fornecedor(dup.id) && Repo.cat) { Repo.cat.fornecedores = [...(Repo.cat.fornecedores||[]), { id:dup.id, razao_social:dup.razao_social, cpf_cnpj:dup.cpf_cnpj }]; await BD.gravar('meta', Repo.cat, 'catalogo'); }
+      f = Repo.fornecedor(dup.id);
+    } else {
+      fNovo = { id: uuid(), _novo: true, tipo_pessoa: _ceTipoPessoa, razao_social: nome, cpf_cnpj: vd.digitos, telefone: g('nf-tel'), email: g('nf-email'),
+        rep_nome: _ceTipoPessoa==='PJ' ? g('nf-rep-nome') : '', rep_cpf: _ceTipoPessoa==='PJ' ? g('nf-rep-cpf').replace(/\D/g,'') : '', criado_em: new Date().toISOString() };
+      f = fNovo;
+    }
+  }
+  const t = Repo.tipo(tid);
   const placa = g('ce-placa').toUpperCase(), serie = g('ce-serie');
   const dup = Repo.equipamentos().find(e=>(placa && (e.placa||'').toUpperCase().replace(/\W/g,'')===placa.replace(/\W/g,'')) || (serie && (e.numero_serie||'')===serie));
   if (dup && !confirm(`Já existe "${dup.descricao}" com essa ${placa && (dup.placa||'').toUpperCase().replace(/\W/g,'')===placa.replace(/\W/g,'') ? 'placa' : 'série'}.\n\nOK = cadastrar mesmo assim\nCancelar = voltar e escolher o que já existe`)) { fecharModal(); buscaEquip = placa || serie; renderVist(); return; }
   const marca = g('ce-marca'), modelo = g('ce-modelo');
   const prefixo = t?.prefixo && g('ce-pref-num') ? `${t.prefixo}-${g('ce-pref-num').padStart(2,'0')}` : '';
   const descricao = [t?.nome, marca, modelo].filter(Boolean).join(' ') + (placa ? ' — '+placa : serie ? ' — '+serie : '');
-  const e = { id: uuid(), _novo: true, descricao, fornecedor_id: f?.id || null, fornecedor_nome: f?.razao_social || g('ce-forn-outro'), frota_tipo_id: tid, tipo: t?.categoria || 'outro',
+  const e = { id: uuid(), _novo: true, descricao, fornecedor_id: f?.id || null, fornecedor_nome: f?.razao_social || '', frota_tipo_id: tid, tipo: t?.categoria || 'outro',
     marca, modelo, ano: parseInt(g('ce-ano'))||null, placa, numero_serie: serie, prefixo, ativo: true,
     frota_tipos: { nome: t?.nome, categoria: t?.categoria, foto_url: t?.foto_url||null }, fornecedores: f ? { razao_social: f.razao_social } : null, criado_em: new Date().toISOString() };
+  if (fNovo) await Repo.salvarFornNovo(fNovo);
   await Repo.salvarEquipNovo(e);
   fecharModal(); buscaEquip = ''; escolherEquip(e.id);
   toast('Equipamento cadastrado no celular', 'sucesso');
