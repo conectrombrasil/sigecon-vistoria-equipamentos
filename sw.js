@@ -1,6 +1,6 @@
 // Vistoria de Equipamentos — guarda o app no celular pra abrir sem internet.
 // Ao publicar uma versão nova do app, aumente o número abaixo.
-const CACHE = 'vistoria-equip-v4';
+const CACHE = 'vistoria-equip-v5';
 const ARQUIVOS = ['./', './index.html', './supabase.js', './manifest.json', './icone.svg', './icone-180.png', './icone-192.png', './icone-512.png', './icone-maskable-512.png'];
 self.addEventListener('install', e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ARQUIVOS))); });
 self.addEventListener('activate', e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });

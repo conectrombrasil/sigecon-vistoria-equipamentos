@@ -296,6 +296,13 @@
   .cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;}
   .cam-flash.on{animation:camflash .25s ease-out;}
   @keyframes camflash{from{opacity:.7}to{opacity:0}}
+  .doc-cat{border:1px solid var(--border2);border-radius:12px;padding:10px 12px;margin-bottom:10px;}
+  .doc-cat-tit{font-weight:800;font-size:13.5px;margin-bottom:6px;}
+  .doc-linha{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border);}
+  .doc-linha:first-of-type{border-top:none;}
+  .doc-nome{flex:1;min-width:0;font-size:13.5px;color:var(--text);} .doc-nome small{display:block;color:var(--text3);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .doc-btn{flex-shrink:0;border:1px solid var(--border2);background:var(--navy3);color:var(--text2);border-radius:10px;padding:7px 10px;font-size:12.5px;font-weight:700;cursor:pointer;}
+  .doc-btn.anexado,.doc-btn.sistema{border-color:var(--ok-txt);color:var(--ok-txt);} .doc-btn.pendente{color:var(--warn-txt);}
   .toggle{display:flex;gap:4px;margin-bottom:14px;background:var(--navy3);border:1px solid var(--border2);padding:4px;border-radius:14px;}
   .toggle button{flex:1;min-height:42px;border-radius:10px;border:none;background:none;color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;}
   .toggle button.sel{background:var(--orange);color:#fff;}
@@ -859,12 +866,179 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.3.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.4.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
 const { createClient } = supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sb-vistoria-equip-auth' } });
+
+// ════════════════ SIGECON ARQUIVOS v1 — início (bloco igual em todos os módulos) ════════════════
+// Arquivos novos vão pro Supabase Storage. Arquivos antigos (drive_id preenchido)
+// continuam abrindo pelo Drive até serem migrados. A geração do contrato no
+// Google Docs NÃO usa isto (continua no Drive, pra poder editar no Docs).
+//
+// Onde fica cada coisa:
+//   · Documentos (CPF, NF, comprovantes, contratos anexos, chats…) → bucket PRIVADO
+//     'sigecon-docs' — só abre com login, por link temporário.
+//   · Fotos de vistoria → bucket PÚBLICO 'vistorias-campo-fotos' (o app usa offline).
+// No banco: drive_id = null; drive_url (e download_url, onde existir) guardam o
+// endereço do arquivo no Storage: .../storage/v1/object/<bucket>/<caminho>
+// (ou .../object/public/<bucket>/<caminho> quando o bucket é público).
+const SG_BUCKET_DOCS = 'sigecon-docs';
+const SG_BUCKET_FOTOS = 'vistorias-campo-fotos';
+const SG_MODULOS_FOTO_PUBLICA = ['vistoria_comodo', 'vistoria_geral', 'vistoria_movel'];
+
+function _sgGasUrl() {
+  if (typeof DRIVE_GAS_URL !== 'undefined' && DRIVE_GAS_URL) return DRIVE_GAS_URL;
+  if (typeof GAS_DRIVE_URL !== 'undefined' && GAS_DRIVE_URL) return GAS_DRIVE_URL;
+  return null;
+}
+async function _sgUsuarioId() {
+  try { const { data } = await sb.auth.getSession(); return data?.session?.user?.id || ''; } catch (e) { return ''; }
+}
+async function _sgTokenGas() { return btoa((await _sgUsuarioId()) + ':' + Date.now() + ':' + (typeof SG_SUFIXO_TOKEN !== 'undefined' ? SG_SUFIXO_TOKEN : 'sigecon')); }
+function sgNomeSeguro(nome) {
+  return String(nome || 'arquivo').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w.\-]+/g, '_').replace(/_+/g, '_').slice(-120) || 'arquivo';
+}
+
+// Onde está o arquivo de um registro (linha de documentos, solicitacoes_documentos, mensagens…)
+function sgLocalArquivo(reg) {
+  if (!reg) return null;
+  if (reg.drive_id && reg.drive_id !== 'null') return { tipo: 'drive', driveId: reg.drive_id };
+  for (const u of [reg.download_url, reg.drive_url, reg.url]) {
+    const m = String(u || '').match(/\/storage\/v1\/object\/(?:(public|sign|authenticated)\/)?([^/?#]+)\/([^?#]+)/);
+    if (m) return { tipo: 'storage', bucket: m[2], caminho: decodeURIComponent(m[3]), publico: m[1] === 'public' };
+  }
+  return null;
+}
+function sgTemArquivo(reg) { return !!sgLocalArquivo(reg); }
+
+// Link pra abrir/baixar. Privado → link temporário (padrão 15 min).
+async function sgUrlArquivo(reg, opcoes) {
+  const o = opcoes || {};
+  const loc = sgLocalArquivo(reg);
+  if (!loc) return null;
+  if (loc.tipo === 'drive') {
+    const gas = _sgGasUrl();
+    return gas ? `${gas}?acao=baixar&driveId=${encodeURIComponent(loc.driveId)}&token=${await _sgTokenGas()}` : null;
+  }
+  if (loc.publico && !o.nomeDownload) return sb.storage.from(loc.bucket).getPublicUrl(loc.caminho).data.publicUrl;
+  const { data, error } = await sb.storage.from(loc.bucket)
+    .createSignedUrl(loc.caminho, o.segundos || 900, o.nomeDownload ? { download: o.nomeDownload } : undefined);
+  if (error) throw new Error('Não foi possível gerar o link do arquivo: ' + error.message);
+  return data.signedUrl;
+}
+
+// Conteúdo do arquivo (pra juntar PDFs, gerar .zip, relatório etc.)
+async function sgBytesArquivo(reg) {
+  const loc = sgLocalArquivo(reg);
+  if (!loc) throw new Error('Arquivo sem endereço');
+  if (loc.tipo === 'drive') {
+    const gas = _sgGasUrl();
+    if (!gas) throw new Error('Endereço do Drive não configurado');
+    const resp = await fetch(`${gas}?acao=base64&driveId=${encodeURIComponent(loc.driveId)}&token=${await _sgTokenGas()}`);
+    const json = await resp.json();
+    if (!json.sucesso) throw new Error(json.erro || 'Falha ao baixar do Drive');
+    const bin = atob(json.base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes, mimeType: json.mimeType || reg.mime_type || 'application/octet-stream' };
+  }
+  const { data, error } = await sb.storage.from(loc.bucket).download(loc.caminho);
+  if (error) throw new Error('Falha ao baixar do Supabase: ' + error.message);
+  return { bytes: new Uint8Array(await data.arrayBuffer()), mimeType: data.type || reg.mime_type || 'application/octet-stream' };
+}
+function _sgBytesParaBase64(bytes) {
+  let bin = '';
+  for (let k = 0; k < bytes.length; k += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(k, k + 0x8000));
+  return btoa(bin);
+}
+async function sgBase64Arquivo(reg) {
+  const { bytes, mimeType } = await sgBytesArquivo(reg);
+  return { base64: _sgBytesParaBase64(bytes), mimeType };
+}
+async function sgDataUrlArquivo(reg) {
+  const { base64, mimeType } = await sgBase64Arquivo(reg);
+  return `data:${mimeType};base64,${base64}`;
+}
+
+// Abre numa aba nova (abre a aba já, senão o navegador bloqueia o pop-up)
+async function sgAbrirArquivo(reg) {
+  const janela = window.open('', '_blank');
+  try {
+    const url = await sgUrlArquivo(reg);
+    if (!url) throw new Error('Arquivo sem endereço');
+    if (janela) janela.location.href = url; else window.location.href = url;
+  } catch (e) {
+    if (janela) janela.close();
+    _sgAviso('Não foi possível abrir o arquivo: ' + (e.message || e));
+  }
+}
+// Baixa direto (salva no aparelho com o nome certo)
+async function sgBaixarArquivo(reg, nomeArquivo) {
+  try {
+    const nome = nomeArquivo || reg.nome_arquivo || 'arquivo';
+    const { bytes, mimeType } = await sgBytesArquivo(reg);
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    const a = document.createElement('a');
+    a.href = url; a.download = nome;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    _sgAviso('Não foi possível baixar o arquivo: ' + (e.message || e));
+  }
+}
+function _sgAviso(msg) {
+  if (typeof mostrarToast === 'function') mostrarToast(msg, 'erro');
+  else if (typeof toast === 'function') toast(msg, 'erro');
+  else alert(msg);
+}
+
+// Envia pro Supabase Storage. Aceita File/Blob ou base64 (string).
+// Devolve os campos pra gravar no registro: { drive_id, drive_url, download_url, caminho, bucket }
+async function sgEnviarArquivo(arquivo, opcoes) {
+  const o = opcoes || {};
+  const publico = o.publico != null ? o.publico : SG_MODULOS_FOTO_PUBLICA.includes(o.modulo);
+  const bucket = o.bucket || (publico ? SG_BUCKET_FOTOS : SG_BUCKET_DOCS);
+  const nome = o.nomeArquivo || arquivo?.name || 'arquivo';
+  const mimeType = o.mimeType || arquivo?.type || 'application/octet-stream';
+  let corpo = arquivo;
+  if (typeof arquivo === 'string') {
+    const bin = atob(arquivo.includes(',') ? arquivo.split(',')[1] : arquivo);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    corpo = new Blob([bytes], { type: mimeType });
+  }
+  const pasta = [sgNomeSeguro(o.modulo || 'geral'), sgNomeSeguro(o.registroId || 'sem-registro')].join('/');
+  const caminho = `${pasta}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${sgNomeSeguro(nome)}`;
+  const { error } = await sb.storage.from(bucket).upload(caminho, corpo, { contentType: mimeType, upsert: false });
+  if (error) throw new Error('Erro ao enviar o arquivo: ' + error.message);
+  const url = publico
+    ? sb.storage.from(bucket).getPublicUrl(caminho).data.publicUrl
+    : `${SUPABASE_URL}/storage/v1/object/${bucket}/${caminho}`;
+  return { drive_id: null, drive_url: url, download_url: url, caminho, bucket };
+}
+
+// Apaga o arquivo do Storage (arquivo do Drive não é apagado — fica como histórico)
+async function sgRemoverArquivo(reg) {
+  const loc = sgLocalArquivo(reg);
+  if (!loc || loc.tipo !== 'storage') return;
+  try { await sb.storage.from(loc.bucket).remove([loc.caminho]); } catch (e) { /* não impede o resto */ }
+}
+
+// Pra botões em HTML gerado: guarda o registro e usa só uma chave no onclick
+// Ex.: `<button onclick="sgAbrirPorChave('${sgGuardar(doc)}')">Abrir</button>`
+const _sgRegistros = {};
+function sgGuardar(reg) {
+  const chave = String(reg?.id || ('r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)));
+  _sgRegistros[chave] = reg;
+  return chave;
+}
+function sgAbrirPorChave(chave) { const r = _sgRegistros[chave]; if (r) sgAbrirArquivo(r); }
+function sgBaixarPorChave(chave, nome) { const r = _sgRegistros[chave]; if (r) sgBaixarArquivo(r, nome); }
+// ════════════════ SIGECON ARQUIVOS v1 — fim ════════════════
 let sessao = null;   // { id, email, nome }
 
 /* =====================================================================
@@ -980,20 +1154,26 @@ const Repo = {
     this.servidor = await BD.pegar('meta', 'servidor') || [];
     this.equipsNovos = await BD.pegar('meta', 'equips_novos') || [];
     this.fornsNovos = await BD.pegar('meta', 'forns_novos') || [];
+    await Forn.iniciar();
   },
   temCatalogo(){ return !!(this.cat && this.cat.equipamentos); },
   async atualizarCatalogo(){
     const [eq, fo, ti, ob, ca] = await Promise.all([
       sb.from('equipamentos').select('id,descricao,prefixo,placa,numero_serie,marca,modelo,ano,tipo,ativo,fornecedor_id,frota_tipo_id,fornecedores(razao_social),frota_tipos!equipamentos_frota_tipo_id_fkey(id,nome,categoria,foto_url)').order('descricao'),
-      sb.from('fornecedores').select('id,razao_social,cpf_cnpj').eq('ativo', true).order('razao_social'),
+      sb.from('fornecedores').select('id,razao_social,cpf_cnpj,tipo_pessoa,email,telefone,criado_por').eq('ativo', true).order('razao_social'),
       sb.from('frota_tipos').select('id,nome,categoria,prefixo,foto_url').eq('ativo', true).order('nome'),
       sb.from('obras').select('id,nome').eq('status', 'ativa').order('nome'),
       sb.from('contrato_ativos').select('equipamento_id,contratos(obra_id)').eq('status', 'ativo').not('equipamento_id', 'is', null),
     ]);
     const erro = [eq, fo, ti, ob].find(r=>r.error);
     if (erro) throw erro.error;
+    // categorias e checklist de documentos do fornecedor (se falhar, o resto do catálogo segue)
+    const [cg, dt] = await Promise.all([
+      sb.from('fornecedor_categorias').select('id,nome').eq('ativo', true).order('nome'),
+      sb.from('documento_tipos').select('id,categoria_id,nome,obrigatorio,aplica_pf,aplica_pj').eq('ativo', true).order('nome') ]);
     const mob = {}; (ca.data||[]).forEach(a=>{ if (a.equipamento_id && a.contratos?.obra_id) mob[a.equipamento_id] = a.contratos.obra_id; });
-    this.cat = { equipamentos: eq.data||[], fornecedores: fo.data||[], tipos: ti.data||[], obras: ob.data||[], mob, em: new Date().toISOString() };
+    this.cat = { equipamentos: eq.data||[], fornecedores: fo.data||[], tipos: ti.data||[], obras: ob.data||[], mob, em: new Date().toISOString(),
+      categorias: cg.error ? (this.cat?.categorias||[]) : (cg.data||[]), doc_tipos: dt.error ? (this.cat?.doc_tipos||[]) : (dt.data||[]) };
     await BD.gravar('meta', this.cat, 'catalogo');
   },
   async atualizarServidor(){
@@ -1358,6 +1538,8 @@ async function buscarFornPorDoc(d, ignorarId){
   return (data||[]).find(f=>f.id!==ignorarId) || null;
 }
 async function trocarFornecedor(de, para, nome){
+  if (de!==para) await Forn.trocarId(de, para);
+  if (typeof vist!=='undefined' && vist) { if (vist.fornecedor_id===de) vist.fornecedor_id = para; if (vist.equipamento?.fornecedor_id===de) { vist.equipamento.fornecedor_id = para; if (nome) vist.equipamento.fornecedor_nome = nome; } }
   for (const e of Repo.equipsNovos.filter(x=>x.fornecedor_id===de)) { e.fornecedor_id = para; if (nome) { e.fornecedor_nome = nome; e.fornecedores = { razao_social:nome }; } await Repo.salvarEquipNovo(e); }
   for (const v of Repo.vistorias().filter(x=>x.equipamento?.fornecedor_id===de)) { v.equipamento.fornecedor_id = para; if (nome) v.equipamento.fornecedor_nome = nome; await Repo.salvar(v); }
 }
@@ -1423,6 +1605,61 @@ function linhaServidor(v){
     resumo: resumoVist(v), app_versao: CONFIG.VERSAO_APP, aparelho: descricaoAparelho(),
   };
 }
+/* =====================================================================
+   FORNECEDOR — pendências de envio (edição, documentos, categorias)
+   Mesmo esquema do app de imóveis: tudo fica no celular e sobe em ordem.
+   ===================================================================== */
+const Forn = {
+  pend: [],
+  async iniciar(){ this.pend = await BD.pegar('meta', 'forn_pend') || []; },
+  async _gravar(){ await BD.gravar('meta', this.pend, 'forn_pend'); },
+  async add(p){ this.pend.push({ id: uuid(), em: new Date().toISOString(), ...p }); await this._gravar(); },
+  qtd(){ return Repo.fornsNovos.filter(f=>!f.enviado).length + this.pend.length; },
+  // só quem cadastrou pode editar (igual imóveis)
+  podeEditar(f){ return !!f && (f._novo ? (!f.criado_por || f.criado_por===sessao?.id) : f.criado_por===sessao?.id); },
+  // categorias aplicadas sozinhas: Documentos Gerais PF/PJ + a de equipamentos
+  categorias(tipoPessoa){
+    const cats = Repo.cat?.categorias || [], tipos = Repo.cat?.doc_tipos || [];
+    const pf = tipoPessoa==='PF', geral = pf ? '__GERAL_PF__' : '__GERAL_PJ__';
+    const ehEquip = c=>/equipamento|maquina/.test(_semAc(c.nome));
+    return cats.filter(c=>c.nome===geral || ehEquip(c))
+      .map(c=>({ ...c, rotulo: c.nome==='__GERAL_PJ__' ? 'Documentos Gerais PJ' : c.nome==='__GERAL_PF__' ? 'Documentos Gerais PF' : c.nome,
+        tipos: tipos.filter(t=>t.categoria_id===c.id && (pf ? t.aplica_pf : t.aplica_pj)) }));
+  },
+  async trocarId(de, para){
+    let mudou = false;
+    this.pend = this.pend.filter(p=>!(p.fornecedor_id===de && p.tipo==='atualizar')); // não sobrescreve o cadastro de outra pessoa
+    this.pend.forEach(p=>{ if (p.fornecedor_id===de) { p.fornecedor_id = para; mudou = true; } });
+    await this._gravar();
+  },
+  async sincronizar(){
+    let erro = null;
+    for (const f of Repo.fornsNovos.filter(x=>!x.enviado)) { const e = await enviarFornNovo(f.id); if (e) erro = e; }
+    for (const p of [...this.pend]) {
+      if (Repo.fornPendente(p.fornecedor_id)) continue; // o fornecedor ainda não subiu
+      try {
+        if (p.tipo==='atualizar') {
+          const { error } = await sb.from('fornecedores').update(p.campos).eq('id', p.fornecedor_id); if (error) throw error;
+        } else if (p.tipo==='vinculo') {
+          const { error } = await sb.from('fornecedor_categorias_vinculo').insert({ fornecedor_id:p.fornecedor_id, categoria_id:p.categoria_id, criado_por:sessao.id });
+          if (error && error.code!=='23505') throw error;
+        } else if (p.tipo==='doc') {
+          const d = await BD.pegar('fotos', p.arquivo_id);
+          if (d) {
+            const arq = await sgEnviarArquivo(d.blob, { modulo:'fornecedores', registroId:p.fornecedor_id, nomeArquivo:d.nome, mimeType:d.mime });
+            const { error } = await sb.from('documentos').insert({ modulo:'fornecedores', registro_id:p.fornecedor_id, tipo:'exigido', documento_tipo_id:p.documento_tipo_id,
+              nome_arquivo:d.nome, mime_type:d.mime, tamanho_bytes:d.bytes, drive_id:null, drive_url:arq.drive_url, download_url:arq.download_url, versao:1, status:'enviado', criado_por:sessao.id });
+            if (error) { await sgRemoverArquivo(arq); throw error; }
+            await BD.apagar('fotos', p.arquivo_id).catch(()=>{});
+          }
+        }
+        this.pend = this.pend.filter(x=>x.id!==p.id); await this._gravar();
+      } catch (e) { erro = (p.tipo==='doc' ? 'Documento do fornecedor: ' : 'Fornecedor: ') + traduzErro(e); }
+    }
+    return erro;
+  },
+};
+
 const Sinc = {
   rodando: false,
   async empurrar(){
@@ -1473,6 +1710,8 @@ const Sinc = {
       const { data } = await sb.auth.getSession();
       if (!data.session) { if (!silencioso) toast('Sua sessão expirou. Saia e entre de novo pra enviar.', 'erro'); return; }
       await MinhaAssinatura.enviar().catch(()=>{});
+      const ef = await Forn.sincronizar().catch(e=>traduzErro(e));
+      if (ef && !silencioso) toast('Não deu pra enviar: '+ef, 'erro');
       const r = await this.empurrar();
       await Repo.atualizarServidor().catch(()=>{});
       if (r.ok && !silencioso) toast(r.ok>1 ? r.ok+' vistorias enviadas' : 'Vistoria enviada', 'sucesso');
@@ -1489,11 +1728,16 @@ const Sinc = {
 window.addEventListener('online', ()=>{ renderStatus(); Sinc.rodar(true); });
 window.addEventListener('offline', renderStatus);
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && sessao && Repo.cat) Sinc.rodar(true); });
-setInterval(()=>{ if (sessao && Repo.aEnviar().length) Sinc.rodar(true); }, 120000);
+setInterval(()=>{ if (sessao && (Repo.aEnviar().length || Forn.qtd())) Sinc.rodar(true); }, 120000);
 
 function renderStatus(){
   const el = document.getElementById('status-barra'); if (!el) return;
-  const pend = Repo.aEnviar().length;
+  const pend = Repo.aEnviar().length, pf = Forn.qtd();
+  if (!pend && pf) {
+    if (!online()) { el.className = 'status-barra offline'; el.innerHTML = `Sem internet · ${pf} envio${pf>1?'s':''} de fornecedor esperando`; return; }
+    if (Sinc.rodando) { el.className = 'status-barra pendente'; el.innerHTML = '<span class="spinner"></span> Enviando…'; return; }
+    el.className = 'status-barra pendente'; el.innerHTML = `${pf} envio${pf>1?'s':''} de fornecedor esperando <button onclick="Sinc.rodar()"><svg class="ic" style="width:16px;height:16px"><use href="#i-envio"/></svg>Enviar agora</button>`; return;
+  }
   if (!online()) { el.className = 'status-barra offline'; el.innerHTML = `Sem internet${pend?` · ${pend} vistoria${pend>1?'s':''} esperando pra subir`:' · pode vistoriar normalmente'}`; return; }
   if (Sinc.rodando) { el.className = 'status-barra pendente'; el.innerHTML = '<span class="spinner"></span> Enviando…'; return; }
   if (pend) { el.className = 'status-barra pendente'; el.innerHTML = `${pend} vistoria${pend>1?'s':''} esperando pra subir <button onclick="Sinc.rodar()"><svg class="ic" style="width:16px;height:16px"><use href="#i-envio"/></svg>Enviar agora</button>`; return; }
@@ -1647,7 +1891,7 @@ function passoEquip(){
     <div class="passo-titulo" style="font-size:16px;margin-top:6px">1. Fornecedor</div>
     ${fid ? `<div class="resumo-equip"><div class="equip-ic">🏢</div><div style="flex:1;min-width:0"><div class="card-titulo">${esc(f?.razao_social || vist.equipamento?.fornecedor_nome || '—')}</div>
         <div class="card-sub">${esc([fmtDoc(f?.cpf_cnpj), nEq + (nEq===1?' equipamento':' equipamentos')].filter(Boolean).join(' · '))}${f?._novo && !f.enviado ? ' · <span class="selo selo-rascunho" style="padding:2px 7px">cadastrado no app</span>' : ''}</div></div>
-        <button class="link-acao" style="flex-shrink:0" onclick="trocarForn()">Trocar</button></div>`
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;align-items:flex-end">${Forn.podeEditar(f) ? `<button class="link-acao" onclick="abrirCadastroForn('${fid}')">Editar</button>` : ''}<button class="link-acao" onclick="trocarForn()">Trocar</button></div></div>`
     : `${vist.equipamento_id ? `<div class="ajuda alerta" style="margin:0 2px 10px">O equipamento "${esc(vist.equipamento.descricao)}" foi escolhido sem fornecedor. Escolha o fornecedor dele.</div>` : ''}
       <label class="busca" style="margin-bottom:10px"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg>
         <input type="search" id="busca-forn" value="${esc(buscaForn)}" placeholder="Nome, CNPJ ou CPF" oninput="buscaForn=this.value;atualizarListaForn()"/></label>
@@ -1750,26 +1994,61 @@ function escolherEquip(id){
 
 /* ---- cadastro de fornecedor (mesmas regras do app de imóveis) ---- */
 let _ceTipoPessoa = 'PJ', _ceDupForn = null;
-function abrirCadastroForn(){
-  _ceTipoPessoa = 'PJ'; _ceDupForn = null;
-  const q = buscaForn.trim(), qd = q.replace(/\D/g,'');
-  abrirModal('Cadastrar fornecedor', `<div class="passo-desc">O fornecedor entra no SIGECON quando a vistoria for enviada. Documentos, dados bancários e o resto do cadastro o escritório completa depois.</div>
-    <div class="toggle"><button type="button" id="nf-pj" class="sel" onclick="ceTipoPessoa('PJ')">Empresa (PJ)</button><button type="button" id="nf-pf" onclick="ceTipoPessoa('PF')">Pessoa física</button></div>
-    <div class="campo"><label class="rotulo" id="nf-rot-doc">CNPJ *</label><input id="nf-doc" inputmode="numeric" placeholder="Só números" value="${qd.length>=11 ? esc(qd) : ''}" onblur="ceChecarDoc()"/></div>
+let _nfEditId = null, _nfDocs = {}, _nfDocsNoSistema = new Set();
+function abrirCadastroForn(editId){
+  const f = editId ? Repo.fornecedor(editId) : null;
+  if (editId && !Forn.podeEditar(f)) { toast('Esse fornecedor não foi cadastrado por você — só quem cadastrou pode editar por aqui.', 'erro'); return; }
+  _nfEditId = editId || null; _nfDocs = {}; _nfDocsNoSistema = new Set();
+  _ceTipoPessoa = f?.tipo_pessoa || 'PJ'; _ceDupForn = null;
+  const q = f ? '' : buscaForn.trim(), qd = q.replace(/\D/g,'');
+  abrirModal(f ? 'Editar fornecedor' : 'Cadastrar fornecedor', `<div class="passo-desc">${f ? 'As mudanças sobem pro SIGECON na próxima sincronização.' : 'O fornecedor entra no SIGECON quando a vistoria for enviada. Dados bancários e o resto do cadastro o escritório completa depois.'}</div>
+    <div class="toggle"><button type="button" id="nf-pj" class="${_ceTipoPessoa==='PJ'?'sel':''}" onclick="ceTipoPessoa('PJ')">Empresa (PJ)</button><button type="button" id="nf-pf" class="${_ceTipoPessoa==='PF'?'sel':''}" onclick="ceTipoPessoa('PF')">Pessoa física</button></div>
+    <div class="campo"><label class="rotulo" id="nf-rot-doc">${_ceTipoPessoa==='PF'?'CPF *':'CNPJ *'}</label><input id="nf-doc" inputmode="numeric" placeholder="Só números" value="${esc(f ? fmtDoc(f.cpf_cnpj) : qd.length>=11 ? qd : '')}" onblur="ceChecarDoc()"/></div>
     <div class="ajuda" id="nf-aviso" style="margin:-6px 0 10px"></div>
-    <div class="campo"><label class="rotulo" id="nf-rot-nome">Razão social *</label><input id="nf-nome" value="${qd.length>=11 ? '' : esc(q)}"/></div>
-    <div class="linha2"><div class="campo"><label class="rotulo">Telefone</label><input id="nf-tel" inputmode="tel"/></div><div class="campo"><label class="rotulo">E-mail</label><input id="nf-email" inputmode="email"/></div></div>
-    <div id="nf-rep-w"><div class="linha2"><div class="campo"><label class="rotulo">Representante legal</label><input id="nf-rep-nome"/></div><div class="campo"><label class="rotulo">CPF do representante</label><input id="nf-rep-cpf" inputmode="numeric"/></div></div></div>
+    <div class="campo"><label class="rotulo" id="nf-rot-nome">${_ceTipoPessoa==='PF'?'Nome *':'Razão social *'}</label><input id="nf-nome" value="${esc(f ? f.razao_social : qd.length>=11 ? '' : q)}"/></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Telefone</label><input id="nf-tel" inputmode="tel" value="${esc(f?.telefone||'')}"/></div><div class="campo"><label class="rotulo">E-mail</label><input id="nf-email" inputmode="email" value="${esc(f?.email||'')}"/></div></div>
+    ${f ? '' : `<div id="nf-rep-w" style="${_ceTipoPessoa==='PJ'?'':'display:none'}"><div class="linha2"><div class="campo"><label class="rotulo">Representante legal</label><input id="nf-rep-nome"/></div><div class="campo"><label class="rotulo">CPF do representante</label><input id="nf-rep-cpf" inputmode="numeric"/></div></div></div>`}
+    <div class="rotulo" style="margin-top:6px">Documentos</div>
+    <div id="nf-docs"></div>
     <div class="erro-msg" id="nf-erro"></div>
-    <button class="btn" onclick="salvarCadastroForn()">Cadastrar e escolher</button>`);
+    <button class="btn" onclick="salvarCadastroForn()">${f ? 'Salvar alterações' : 'Cadastrar e escolher'}</button>`);
+  renderDocsForn();
+  // o que já está no sistema (só online; offline mostra só o que foi anexado aqui)
+  if (f && !f._novo && online()) sb.from('documentos').select('documento_tipo_id').eq('modulo','fornecedores').eq('registro_id', f.id)
+    .then(({ data })=>{ (data||[]).forEach(d=>d.documento_tipo_id && _nfDocsNoSistema.add(d.documento_tipo_id)); renderDocsForn(); }, ()=>{});
+}
+function renderDocsForn(){
+  const el = document.getElementById('nf-docs'); if (!el) return;
+  const fid = _nfEditId;
+  const pendentes = new Set(Forn.pend.filter(p=>p.tipo==='doc' && p.fornecedor_id===fid).map(p=>p.documento_tipo_id));
+  const cats = Forn.categorias(_ceTipoPessoa);
+  if (!cats.length) { el.innerHTML = `<div class="ajuda" style="margin:0 0 12px">Lista de documentos indisponível — abra o app com internet pelo menos uma vez.</div>`; return; }
+  el.innerHTML = cats.map(c=>`<div class="doc-cat"><div class="doc-cat-tit">📂 ${esc(c.rotulo)}</div>
+    ${!c.tipos.length ? '<div class="ajuda" style="margin:0">Nenhum documento cadastrado pra essa categoria.</div>' : c.tipos.map(t=>{
+      const st = _nfDocs[t.id] ? 'anexado' : pendentes.has(t.id) ? 'pendente' : _nfDocsNoSistema.has(t.id) ? 'sistema' : '';
+      const rot = { anexado:'✅ Anexado', pendente:'⏳ Esperando envio', sistema:'✅ No sistema' }[st] || '📎 Anexar';
+      return `<div class="doc-linha"><span class="doc-nome">${esc(t.nome)}${t.obrigatorio?' <b style="color:var(--err-txt)">*</b>':''}${_nfDocs[t.id]?`<small>${esc(_nfDocs[t.id].nome)}</small>`:''}</span>
+        <button type="button" class="doc-btn ${st}" onclick="document.getElementById('doc-in-${t.id}').click()">${st==='sistema'||st==='pendente' ? rot+' · trocar' : rot}</button>
+        <input type="file" id="doc-in-${t.id}" accept="image/*,.pdf" hidden onchange="anexarDocForn(this,'${t.id}')"/></div>`;
+    }).join('')}</div>`).join('');
+}
+async function anexarDocForn(input, tipoId){
+  const arq = input.files && input.files[0]; input.value = ''; if (!arq) return;
+  try {
+    let blob = arq, mime = arq.type || 'application/octet-stream', nome = arq.name || 'documento';
+    if (mime.startsWith('image/')) { blob = await dataUrlParaBlob(await reduzirFoto(arq, 1600)); mime = 'image/jpeg'; nome = nome.replace(/\.[^.]+$/, '') + '.jpg'; }
+    if (blob.size > 15*1024*1024) { toast('Arquivo muito grande (máx. 15 MB).', 'erro'); return; }
+    _nfDocs[tipoId] = { blob, mime, nome, bytes: blob.size };
+    renderDocsForn();
+  } catch (e) { toast('Não deu pra usar esse arquivo: ' + (e.message||e), 'erro'); }
 }
 function ceTipoPessoa(t){
   _ceTipoPessoa = t;
   document.getElementById('nf-pj').classList.toggle('sel', t==='PJ'); document.getElementById('nf-pf').classList.toggle('sel', t==='PF');
   document.getElementById('nf-rot-doc').textContent = t==='PF' ? 'CPF *' : 'CNPJ *';
   document.getElementById('nf-rot-nome').textContent = t==='PF' ? 'Nome *' : 'Razão social *';
-  document.getElementById('nf-rep-w').style.display = t==='PJ' ? '' : 'none';
-  ceChecarDoc();
+  const rep = document.getElementById('nf-rep-w'); if (rep) rep.style.display = t==='PJ' ? '' : 'none';
+  renderDocsForn(); ceChecarDoc();
 }
 // mesma validação do app de imóveis (dígitos verificadores)
 function validarDoc(valor, tipo){
@@ -1787,40 +2066,79 @@ function validarDoc(valor, tipo){
   }
   return { ok:true, digitos:d };
 }
-// já existe fornecedor com esse CPF/CNPJ (no celular ou no sistema)?
-async function fornPorDoc(d){
-  const local = Repo.fornecedores().find(f=>String(f.cpf_cnpj||'').replace(/\D/g,'')===d);
+// já existe fornecedor com esse CPF/CNPJ (no celular ou no sistema)? ignora o próprio na edição
+async function fornPorDoc(d, ignorarId){
+  const local = Repo.fornecedores().find(f=>f.id!==ignorarId && String(f.cpf_cnpj||'').replace(/\D/g,'')===d);
   if (local) return local;
   if (!navigator.onLine) return null;
-  try { return await buscarFornPorDoc(d, null); } catch(e){ return null; }
+  try { return await buscarFornPorDoc(d, ignorarId||null); } catch(e){ return null; }
 }
 async function ceChecarDoc(){
   const el = document.getElementById('nf-aviso'); if (!el) return;
   el.textContent = ''; _ceDupForn = null;
   const v = validarDoc(document.getElementById('nf-doc').value, _ceTipoPessoa);
   if (!v.ok) return;
-  const dup = await fornPorDoc(v.digitos);
+  const dup = await fornPorDoc(v.digitos, _nfEditId);
   if (dup) { _ceDupForn = dup; el.innerHTML = `⚠️ Já cadastrado: <b>${esc(dup.razao_social||'')}</b>${dup.ativo===false?' (inativo)':''}`; }
 }
+async function _guardarDocsForn(fid){
+  const ids = new Set(Forn.categorias(_ceTipoPessoa).flatMap(c=>c.tipos.map(t=>t.id)));
+  for (const [tipoId, d] of Object.entries(_nfDocs)) {
+    if (!ids.has(tipoId)) continue; // documento que não vale pro tipo de pessoa escolhido
+    const aid = uuid();
+    await BD.gravar('fotos', { id: aid, tipo: 'doc_forn', blob: d.blob, mime: d.mime, nome: d.nome, bytes: d.bytes, em: new Date().toISOString() });
+    await Forn.add({ tipo: 'doc', fornecedor_id: fid, documento_tipo_id: tipoId, arquivo_id: aid });
+  }
+}
 async function salvarCadastroForn(){
-  const g = id=>document.getElementById(id).value.trim(), erro = document.getElementById('nf-erro');
+  const g = id=>(document.getElementById(id)?.value||'').trim(), erro = document.getElementById('nf-erro');
   erro.textContent = '';
   const nome = g('nf-nome'), vd = validarDoc(g('nf-doc'), _ceTipoPessoa);
   if (!vd.ok) { erro.textContent = vd.msg; return; }
   if (!nome) { erro.textContent = 'Informe '+(_ceTipoPessoa==='PF'?'o nome':'a razão social')+' do fornecedor.'; return; }
-  const dup = await fornPorDoc(vd.digitos);
+  const dup = await fornPorDoc(vd.digitos, _nfEditId);
+  const rot = vd.digitos.length===11 ? 'CPF' : 'CNPJ';
+  if (dup && (_nfEditId || dup.ativo===false)) {
+    erro.textContent = `Esse ${rot} já é do fornecedor "${dup.razao_social||''}"${dup.ativo===false?' (inativo — peça pro escritório reativar)':''}.`; return;
+  }
   if (dup) {
-    const rot = vd.digitos.length===11 ? 'CPF' : 'CNPJ';
-    if (dup.ativo===false) { erro.textContent = `Esse ${rot} é do fornecedor "${dup.razao_social||''}", que está inativo — peça pro escritório reativar.`; return; }
     if (!confirm(`Já existe um fornecedor com esse ${rot}:\n\n${dup.razao_social||'(sem nome)'}\n\nUsar esse cadastro?`)) { erro.textContent = `Não dá pra cadastrar: o ${rot} já pertence a "${dup.razao_social||''}".`; return; }
     if (!Repo.fornecedor(dup.id) && Repo.cat) { Repo.cat.fornecedores = [...(Repo.cat.fornecedores||[]), { id:dup.id, razao_social:dup.razao_social, cpf_cnpj:dup.cpf_cnpj }]; await BD.gravar('meta', Repo.cat, 'catalogo'); }
     fecharModal(); escolherForn(dup.id);
     toast('Fornecedor existente escolhido.', 'sucesso');
     return;
   }
-  const f = { id: uuid(), _novo: true, tipo_pessoa: _ceTipoPessoa, razao_social: nome, cpf_cnpj: vd.digitos, telefone: g('nf-tel'), email: g('nf-email'),
+  const campos = { tipo_pessoa: _ceTipoPessoa, razao_social: nome, cpf_cnpj: vd.digitos, telefone: g('nf-tel') || null, email: g('nf-email') || null };
+
+  if (_nfEditId) {
+    const f = Repo.fornecedor(_nfEditId);
+    const nomeAntigo = f.razao_social;
+    if (f._novo && !f.enviado) { Object.assign(f, campos); await Repo.salvarFornNovo(f); } // ainda não subiu: o cadastro sobe já corrigido
+    else {
+      if (f._novo) { Object.assign(f, campos); await Repo.salvarFornNovo(f); }
+      const i = (Repo.cat.fornecedores||[]).findIndex(x=>x.id===f.id); if (i>=0) { Object.assign(Repo.cat.fornecedores[i], campos); await BD.gravar('meta', Repo.cat, 'catalogo'); }
+      await Forn.add({ tipo: 'atualizar', fornecedor_id: f.id, campos });
+    }
+    if (f._novo && !f.enviado) { // categorias só no cadastro (PF/PJ pode ter mudado)
+      Forn.pend = Forn.pend.filter(p=>!(p.tipo==='vinculo' && p.fornecedor_id===f.id));
+      for (const c of Forn.categorias(_ceTipoPessoa)) Forn.pend.push({ id:uuid(), em:new Date().toISOString(), tipo:'vinculo', fornecedor_id:f.id, categoria_id:c.id });
+      await Forn._gravar();
+    }
+    await _guardarDocsForn(f.id);
+    await trocarFornecedor(f.id, f.id, nome); // atualiza o nome nas vistorias e equipamentos do celular
+    if (vist && vist.equipamento?.fornecedor_id===f.id) vist.equipamento.fornecedor_nome = nome;
+    if (vist && vist.rep && vist.rep.empresa===nomeAntigo) vist.rep.empresa = nome;
+    if (vist) autosalvar(true);
+    fecharModal(); renderVist(); Sinc.rodar(true);
+    toast('Fornecedor atualizado.', 'sucesso');
+    return;
+  }
+
+  const f = { id: uuid(), _novo: true, ...campos, criado_por: sessao?.id || null,
     rep_nome: _ceTipoPessoa==='PJ' ? g('nf-rep-nome') : '', rep_cpf: _ceTipoPessoa==='PJ' ? g('nf-rep-cpf').replace(/\D/g,'') : '', criado_em: new Date().toISOString() };
   await Repo.salvarFornNovo(f);
+  for (const c of Forn.categorias(_ceTipoPessoa)) await Forn.add({ tipo:'vinculo', fornecedor_id:f.id, categoria_id:c.id });
+  await _guardarDocsForn(f.id);
   fecharModal(); escolherForn(f.id);
   toast('Fornecedor cadastrado. Agora cadastre o equipamento.', 'sucesso');
 }
