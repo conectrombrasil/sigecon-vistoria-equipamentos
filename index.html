@@ -866,7 +866,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.4.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.5.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -1576,6 +1576,18 @@ async function cadastrarEquipNoSistema(v){
     if (falha) { e.nao_cadastrado = falha; await Repo.salvarEquipNovo(e); return; }
   }
   if (!e.fornecedor_id) { e.nao_cadastrado = 'Fornecedor não está cadastrado no SIGECON.'; await Repo.salvarEquipNovo(e); return; }
+  // alguém cadastrou a mesma placa/série enquanto este estava offline? usa o cadastro existente
+  const np = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (e.placa || e.numero_serie) {
+    const { data: ja } = await sb.from('equipamentos').select('id,descricao,placa,numero_serie');
+    const ex = (ja||[]).find(x=>x.id!==e.id && ((e.placa && np(x.placa)===np(e.placa)) || (e.numero_serie && np(x.numero_serie)===np(e.numero_serie))));
+    if (ex) {
+      e.cadastrado = true; e.usado_id = ex.id; await Repo.salvarEquipNovo(e);
+      v.equipamento_id = ex.id; v.equip_novo = false; await Repo.salvar(v);
+      toast(`"${ex.descricao}" já estava cadastrado — a vistoria foi ligada a ele.`, 'sucesso');
+      return;
+    }
+  }
   const linha = { id:e.id, descricao:e.descricao, fornecedor_id:e.fornecedor_id, frota_tipo_id:e.frota_tipo_id||null, tipo:e.tipo||'outro',
     marca:e.marca||null, modelo:e.modelo||null, ano:e.ano||null, placa:e.placa||null, numero_serie:e.numero_serie||null, prefixo:e.prefixo||null, ativo:true };
   const { error } = await sb.from('equipamentos').insert(linha);
@@ -2166,16 +2178,20 @@ async function salvarCadastroEquip(){
   if (!tid) { erro.textContent = 'Escolha o tipo do equipamento.'; return; }
   const t = Repo.tipo(tid);
   const placa = g('ce-placa').toUpperCase(), serie = g('ce-serie');
-  const sp = x=>String(x||'').toUpperCase().replace(/\W/g,'');
-  const dup = Repo.equipamentos().find(e=>(placa && sp(e.placa)===sp(placa)) || (serie && (e.numero_serie||'')===serie));
+  // placa ou nº de série/chassi não podem repetir (confere também os inativos)
+  const sp = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const todos = [...(Repo.cat?.equipamentos||[]), ...Repo.equipsNovos.filter(n=>!(Repo.cat?.equipamentos||[]).some(c=>c.id===n.id))];
+  const dup = todos.find(e=>(placa && sp(e.placa)===sp(placa)) || (serie && sp(e.numero_serie)===sp(serie)));
   if (dup) {
-    const oQue = placa && sp(dup.placa)===sp(placa) ? 'placa' : 'série';
-    const outroForn = dup.fornecedor_id !== f.id ? `\n(está no fornecedor ${dup.fornecedores?.razao_social || dup.fornecedor_nome || '—'})` : '';
-    if (!confirm(`Já existe "${dup.descricao}" com essa ${oQue}.${outroForn}\n\nOK = cadastrar mesmo assim\nCancelar = voltar`)) {
-      fecharModal();
-      if (dup.fornecedor_id === f.id) escolherEquip(dup.id);
+    const oQue = placa && sp(dup.placa)===sp(placa) ? 'placa' : 'nº de série/chassi';
+    const fornDup = dup.fornecedores?.razao_social || dup.fornecedor_nome || '—';
+    if (dup.ativo !== false && dup.fornecedor_id === f.id) {
+      if (confirm(`Já existe "${dup.descricao}" com essa ${oQue}.\n\nNão dá pra cadastrar repetido. Usar o equipamento que já existe?`)) { fecharModal(); escolherEquip(dup.id); }
+      else erro.textContent = `Essa ${oQue} já pertence a "${dup.descricao}".`;
       return;
     }
+    erro.textContent = `Essa ${oQue} já está cadastrada: "${dup.descricao}" (${fornDup})${dup.ativo===false?' — cadastro inativo, peça pro escritório reativar':''}. Não é possível cadastrar repetido.`;
+    return;
   }
   const marca = g('ce-marca'), modelo = g('ce-modelo');
   const prefixo = t?.prefixo && g('ce-pref-num') ? `${t.prefixo}-${g('ce-pref-num').padStart(2,'0')}` : '';
