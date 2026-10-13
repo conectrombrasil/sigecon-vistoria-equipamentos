@@ -679,6 +679,7 @@
   </div>
   <div class="status-barra" id="status-barra"></div>
   <div class="home-ferramentas">
+    <div class="seg" id="home-abas" style="margin-bottom:10px"></div>
     <label class="busca"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg>
       <input type="search" id="busca-home" placeholder="Buscar equipamento, placa, obra" enterkeyhint="search" oninput="renderHome()"/></label>
     <div class="filtros" id="filtros-home"></div>
@@ -866,7 +867,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.5.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.6.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -1470,13 +1471,17 @@ async function carregarUsuario(){
   if (!u || u.ativo===false) throw new Error('sem_acesso');
   const perfilGlobal = u.perfis?.nome;
   if (perfilGlobal==='fornecedor' || u.fornecedor_id) throw new Error('sem_acesso');
-  let ok = perfilGlobal==='admin';
+  let ok = perfilGlobal==='admin', perfilApp = ok ? 'admin' : null;
   if (!ok) {
     const { data:gf, error:eM } = await sb.from('usuario_modulos').select('perfil').eq('usuario_id', sessao.id).eq('modulo', 'gestao_frota').maybeSingle();
     if (eM) throw eM;
     ok = !!gf && ['gestor','operador'].includes(gf.perfil || 'operador');
+    if (ok) perfilApp = gf.perfil || 'operador';
   }
   if (!ok) throw new Error('sem_acesso');
+  sessao.perfilApp = perfilApp;
+  // obras do usuário (aba Equipamentos). Se falhar, mantém o que já tinha
+  try { const { data:uo, error:eO } = await sb.from('usuario_obras').select('obra_id').eq('usuario_id', sessao.id); if (!eO) sessao.obras = (uo||[]).map(x=>x.obra_id).filter(Boolean); } catch (_) {}
   sessao.nome = nomeDoUsuario(u) || (sessao.email||'').split('@')[0];
   Prefs.set('sessao', sessao);
 }
@@ -1776,6 +1781,8 @@ function listaHome(){
 function renderHome(){
   const p = Repo.vistorias().filter(v=>v.status!=='concluida').length;
   document.getElementById('home-sub').textContent = `${sessao?.nome||''}${p?` · ${p} em andamento`:''}`;
+  document.getElementById('home-abas').innerHTML = `<button class="${homeAba==='vist'?'sel':''}" onclick="mudarAbaHome('vist')">📋 Vistorias</button><button class="${homeAba==='equip'?'sel':''}" onclick="mudarAbaHome('equip')">🚜 Equipamentos</button>`;
+  if (homeAba==='equip') return renderEquipHome();
   const todas = listaHome();
   const filtros = [
     ['todas','Todas', todas.length], ['andamento','Em andamento', todas.filter(v=>v.status!=='concluida').length],
@@ -1828,6 +1835,131 @@ function abrirMenu(){
     if (op==='assinatura') { const a = await MinhaAssinatura.obter(); abrirModal('Minha assinatura', a ? `<div class="assin-img" style="margin-bottom:10px"><img src="${a.imagem}" alt=""/></div><div class="passo-desc">Salva em ${fmtDataHora(a.atualizado_em)}${a.pendente?' (ainda não enviada ao sistema)':''}. Refazer vale também nos apps da frota e de imóveis, mas não muda as vistorias já assinadas.</div><button class="btn btn-secundario" onclick="abrirCadastroAssinatura()">Refazer assinatura</button>` : `<div class="passo-desc">Você ainda não cadastrou sua assinatura.</div><button class="btn" onclick="abrirCadastroAssinatura()">Cadastrar agora</button>`); }
     if (op==='sair') sair();
   }, `<div class="ajuda" style="margin:0 0 12px">Versão ${CONFIG.VERSAO_APP}</div>`);
+}
+
+/* =====================================================================
+   ABA EQUIPAMENTOS — lista, ficha e edição (gestor da frota / admin)
+   ===================================================================== */
+let homeAba = 'vist', filtroEquip = null;
+function mudarAbaHome(a){
+  homeAba = a; const b = document.getElementById('busca-home'); if (b) { b.value = ''; b.placeholder = a==='equip' ? 'Buscar prefixo, placa, chassi, fornecedor' : 'Buscar equipamento, placa, obra'; }
+  renderHome();
+}
+function minhasObras(){ return Array.isArray(sessao?.obras) ? sessao.obras : []; }
+// obra onde o equipamento está: contrato ativo; senão, a última vistoria (mobilização = na obra; desmobilização = saiu)
+function obraDoEquip(id){
+  const c = Repo.cat?.mob?.[id]; if (c) return c;
+  const ult = listaHome().filter(v=>v.equipamento_id===id && v.status==='concluida')
+    .sort((a,b)=>String(b.data_vistoria||b.criado_em).localeCompare(String(a.data_vistoria||a.criado_em)))[0];
+  if (!ult || ult.tipo!=='mobilizacao') return null;
+  return ult.obra_id || (Repo.servidor.find(s=>s.id===ult.id)?.obra_id) || null;
+}
+function nomeObra(id){ return Repo.obra(id)?.nome || ''; }
+function fornNomeEquip(e){ return e?.fornecedores?.razao_social || e?.fornecedor_nome || Repo.fornecedor(e?.fornecedor_id)?.razao_social || ''; }
+function equipLocalPendente(e){ return !!(e && e._novo && !e.cadastrado); }
+function podeEditarEquip(e){
+  if (!e) return false;
+  if (equipLocalPendente(e)) return true; // ainda só no celular
+  const p = sessao?.perfilApp;
+  if (p==='admin') return true;
+  if (p!=='gestor') return false;
+  const o = obraDoEquip(e.id);
+  return !!o && minhasObras().includes(o);
+}
+function renderEquipHome(){
+  const todos = Repo.equipamentos();
+  const minhas = minhasObras();
+  if (!filtroEquip) filtroEquip = minhas.length && sessao?.perfilApp!=='admin' ? 'minhas' : 'todos';
+  const comObra = todos.map(e=>({ e, o: obraDoEquip(e.id) }));
+  const nMinhas = comObra.filter(x=>x.o && minhas.includes(x.o)).length, nMob = comObra.filter(x=>x.o).length;
+  const filtros = [ ...(minhas.length ? [['minhas','Minhas obras', nMinhas]] : []), ['mob','Mobilizados', nMob], ['todos','Todos', todos.length] ];
+  document.getElementById('filtros-home').innerHTML = filtros.map(([k,l,n])=>`<button class="chip-filtro ${filtroEquip===k?'ativo':''}" onclick="filtroEquip='${k}';renderHome()">${l}<span class="chip-n">${n}</span></button>`).join('');
+  const q = _semAc(document.getElementById('busca-home').value||'').trim();
+  let lista = comObra.filter(({e,o})=>{
+    if (filtroEquip==='minhas' && !(o && minhas.includes(o))) return false;
+    if (filtroEquip==='mob' && !o) return false;
+    if (!q) return true;
+    return [e.descricao, e.prefixo, e.placa, e.numero_serie, e.marca, e.modelo, e.frota_tipos?.nome, fornNomeEquip(e), nomeObra(o)].some(x=>_semAc(x).includes(q));
+  }).sort((a,b)=>String(a.e.prefixo||a.e.descricao||'').localeCompare(String(b.e.prefixo||b.e.descricao||''), 'pt-BR', { numeric:true }));
+  const total = lista.length; lista = lista.slice(0, 300);
+  let html = '';
+  if (!total) html = `<div class="vazio"><div class="vazio-icone">🚜</div>${todos.length ? 'Nenhum equipamento com esse filtro.' : 'Nenhum equipamento na lista.<br/>Use <b>Menu › Atualizar equipamentos e obras</b>.'}</div>`;
+  html += lista.map(({e,o})=>`<button class="card" onclick="abrirFichaEquip('${e.id}')">
+      <div class="card-linha"><div class="foto-mini">${iconeEquip(e)}</div>
+        <div style="flex:1;min-width:0"><div class="card-titulo">${esc(e.descricao||'—')}</div>
+          <div class="card-sub">${esc([idEquip(e) || e.numero_serie, fornNomeEquip(e)].filter(Boolean).join(' · ')||'—')}</div></div>
+        <span class="card-seta"><svg class="ic"><use href="#i-seta"/></svg></span></div>
+      <div class="card-rodape">${o ? `<span>🏗️ ${esc(nomeObra(o)||'Obra')}</span>` : `<span style="color:var(--text3)">Sem obra no momento</span>`}${equipLocalPendente(e)?'<span class="selo selo-rascunho" style="margin-left:auto">cadastrado no app</span>':''}</div>
+    </button>`).join('');
+  if (total > lista.length) html += `<div class="ajuda" style="text-align:center">Mostrando ${lista.length} de ${total}. Use a busca pra achar os outros.</div>`;
+  document.getElementById('lista-home').innerHTML = html;
+  renderStatus();
+}
+function abrirFichaEquip(id){
+  const e = Repo.equipamento(id); if (!e) return;
+  const o = obraDoEquip(id);
+  const vs = listaHome().filter(v=>v.equipamento_id===id);
+  const lin = (r,v)=> v ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border2)"><span class="card-sub">${r}</span><b style="text-align:right;font-size:14px">${esc(String(v))}</b></div>` : '';
+  abrirModal('Equipamento', `<div class="resumo-equip" style="margin-bottom:12px"><div class="equip-ic">${iconeEquip(e)}</div><div style="flex:1;min-width:0"><div class="card-titulo">${esc(e.descricao||'—')}</div><div class="card-sub">${esc(fornNomeEquip(e)||'—')}</div></div></div>
+    ${lin('Tipo', e.frota_tipos?.nome)}${lin('Prefixo', e.prefixo)}${lin('Placa', e.placa)}${lin('Nº de série / chassi', e.numero_serie)}${lin('Marca', e.marca)}${lin('Modelo', e.modelo)}${lin('Ano', e.ano)}${lin('Obra', o ? (nomeObra(o)||'—') : 'Sem obra no momento')}
+    <div style="display:flex;gap:8px;margin:14px 0 6px">
+      ${podeEditarEquip(e) ? `<button class="btn btn-secundario" style="flex:1" onclick="abrirEdicaoEquip('${id}')">✏️ Editar</button>` : ''}
+      <button class="btn" style="flex:1" onclick="novaVistoriaDoEquip('${id}')">Nova vistoria</button></div>
+    ${!podeEditarEquip(e) && sessao?.perfilApp==='gestor' ? `<div class="ajuda" style="margin:4px 0 0">Você edita os equipamentos que estão nas suas obras.</div>` : ''}
+    <div class="passo-titulo" style="font-size:15px;margin:16px 0 8px">Vistorias (${vs.length})</div>
+    ${vs.length ? vs.map(v=>`<button class="card" style="margin-bottom:8px" onclick="fecharModal();abrirVistoria('${v.id}')"><div class="card-topo-linha"><span class="selo ${v.tipo==='desmobilizacao'?'selo-desmob':'selo-mob'}">${v.tipo==='desmobilizacao'?'Desmobilização':'Mobilização'}</span>${v.status!=='concluida'?'<span class="selo selo-rascunho">Em andamento</span>':''}</div>
+      <div class="card-rodape"><span>📅 <b>${fmtDataHora(v.data_vistoria||v.criado_em)}</b></span>${v.obra_nome?`<span>🏗️ ${esc(v.obra_nome)}</span>`:''}</div></button>`).join('') : '<div class="ajuda" style="margin:0">Nenhuma vistoria deste equipamento no último ano.</div>'}`);
+}
+function novaVistoriaDoEquip(id){ fecharModal(); novaVistoria(); escolherEquip(id); }
+function abrirEdicaoEquip(id){
+  const e = Repo.equipamento(id); if (!e) return;
+  const v = x=>esc(x==null?'':String(x));
+  abrirModal('Editar equipamento', `<div class="passo-desc">${esc(e.frota_tipos?.nome||'')}${fornNomeEquip(e)?' · '+esc(fornNomeEquip(e)):''}<br/><span style="font-size:12.5px">Fornecedor, franquia e valores são alterados só no escritório.</span></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Prefixo</label><input id="ee-prefixo" value="${v(e.prefixo)}" style="text-transform:uppercase"/></div><div class="campo"><label class="rotulo">Placa</label><input id="ee-placa" value="${v(e.placa)}" placeholder="ABC1D23" style="text-transform:uppercase"/></div></div>
+    <div class="campo"><label class="rotulo">Nº de série / chassi</label><input id="ee-serie" value="${v(e.numero_serie)}"/></div>
+    <div class="linha2"><div class="campo"><label class="rotulo">Marca</label><input id="ee-marca" value="${v(e.marca)}"/></div><div class="campo"><label class="rotulo">Modelo</label><input id="ee-modelo" value="${v(e.modelo)}"/></div></div>
+    <div class="campo"><label class="rotulo">Ano</label><input id="ee-ano" inputmode="numeric" value="${v(e.ano)}"/></div>
+    <div class="erro-msg" id="ee-erro"></div>
+    <div style="display:flex;gap:8px"><button class="btn btn-secundario" style="flex:1" onclick="abrirFichaEquip('${id}')">Voltar</button><button class="btn" style="flex:2" id="ee-btn" onclick="salvarEdicaoEquip('${id}')">Salvar</button></div>`);
+}
+async function salvarEdicaoEquip(id){
+  const e = Repo.equipamento(id); if (!e) return;
+  const g = k=>document.getElementById(k).value.trim(), erro = document.getElementById('ee-erro'), btn = document.getElementById('ee-btn');
+  erro.textContent = '';
+  if (!podeEditarEquip(e)) { erro.textContent = 'Você não tem permissão pra editar este equipamento.'; return; }
+  const placa = g('ee-placa').toUpperCase(), serie = g('ee-serie'), ano = g('ee-ano');
+  if (ano && !/^\d{4}$/.test(ano)) { erro.textContent = 'Ano com 4 dígitos (ex.: 2022).'; return; }
+  const campos = { prefixo: g('ee-prefixo').toUpperCase() || null, placa: placa || null, numero_serie: serie || null, marca: g('ee-marca') || null, modelo: g('ee-modelo') || null, ano: ano ? parseInt(ano) : null };
+  campos.descricao = [e.frota_tipos?.nome, campos.marca, campos.modelo].filter(Boolean).join(' ') + (placa ? ' — '+placa : serie ? ' — '+serie : '');
+  if (!campos.descricao.trim()) campos.descricao = e.descricao;
+  // placa / chassi não podem repetir (lista do celular + servidor)
+  const sp = x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const achar = lista=>lista.find(x=>x.id!==id && ((placa && sp(x.placa)===sp(placa)) || (serie && sp(x.numero_serie)===sp(serie))));
+  const msgDup = d=>`Essa ${placa && sp(d.placa)===sp(placa) ? 'placa' : 'nº de série/chassi'} já está em "${d.descricao}" (${d.fornecedores?.razao_social || d.fornecedor_nome || '—'})${d.ativo===false?' — cadastro inativo':''}. Não é possível repetir.`;
+  let dup = achar([...(Repo.cat?.equipamentos||[]), ...Repo.equipsNovos]);
+  if (dup) { erro.textContent = msgDup(dup); return; }
+
+  if (equipLocalPendente(e)) { // ainda não subiu: corrige no celular e sobe já corrigido
+    Object.assign(e, campos); await Repo.salvarEquipNovo(e);
+    for (const vv of Repo.vistorias().filter(x=>x.equipamento_id===id && x.status!=='concluida')) { vv.equipamento = snapshotEquip(e); await Repo.salvar(vv); }
+    toast('Equipamento atualizado.', 'sucesso'); abrirFichaEquip(id); renderHome(); return;
+  }
+  if (!online()) { erro.textContent = 'Precisa de internet pra salvar a edição.'; return; }
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    if (placa || serie) {
+      const { data: srv, error: eS } = await sb.from('equipamentos').select('id,descricao,placa,numero_serie,ativo,fornecedores(razao_social)');
+      if (eS) throw eS;
+      dup = achar(srv||[]); if (dup) { erro.textContent = msgDup(dup); return; }
+    }
+    const { data, error } = await sb.from('equipamentos').update(campos).eq('id', id).select('id');
+    if (error) throw error;
+    if (!data || !data.length) { erro.textContent = 'Não foi possível salvar (sem permissão no servidor).'; return; }
+    const i = (Repo.cat?.equipamentos||[]).findIndex(x=>x.id===id);
+    if (i>=0) { Object.assign(Repo.cat.equipamentos[i], campos); await BD.gravar('meta', Repo.cat, 'catalogo'); }
+    toast('Equipamento atualizado.', 'sucesso'); abrirFichaEquip(id); renderHome();
+  } catch (x) { erro.textContent = traduzErro(x); }
+  finally { const b = document.getElementById('ee-btn'); if (b) { b.disabled = false; b.textContent = 'Salvar'; } }
 }
 
 /* =====================================================================
