@@ -579,6 +579,7 @@
   .btn-foto{width:76px;height:76px;border-radius:10px;border:1.5px dashed var(--border2);background:none;color:var(--text2);font-size:11.5px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex-shrink:0;}
   .btn-foto .ic{width:24px;height:24px;}
   .btn-foto.principal{border-color:var(--orange);color:var(--lar-txt);}
+  .cam-arq{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(118px + var(--safe-bot));z-index:3;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;}
   .btn-galeria{background:none;border:none;color:var(--text3);font-size:11.5px;text-decoration:underline;cursor:pointer;padding:4px;}
   .ref-mob{display:flex;align-items:center;gap:10px;background:rgba(122,79,201,.10);border:1px dashed rgba(122,79,201,.45);border-radius:10px;padding:7px 9px;margin-bottom:10px;font-size:12px;color:var(--text2);}
   .ref-mob .foto-th{width:56px;height:56px;}
@@ -753,7 +754,7 @@
 </div>
 <div class="visor" id="visor" onclick="if(event.target===this)fecharVisor()"><button onclick="fecharVisor()" aria-label="Fechar">✕</button><img id="visor-img" alt=""/><div class="cap" id="visor-cap"></div></div>
 <input type="file" id="in-camera" accept="image/*" capture="environment" hidden onchange="fotoEscolhida(this)"/>
-<input type="file" id="in-galeria" accept="image/*" multiple hidden onchange="fotoEscolhida(this)"/>
+<input type="file" id="in-galeria" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" multiple hidden onchange="fotoEscolhida(this)"/>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="impressao" aria-hidden="true"></div>
@@ -896,7 +897,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.7.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.7.1', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -2528,7 +2529,7 @@ function itemHtml(i){
     <div class="opcoes3">${rotulosSit(i).map(([k,l,cl])=>`<button class="${r.sit===k?'sel-'+cl:''}" onclick="setSit('${i.c}','${k}')">${l}</button>`).join('')}</div>
     ${i.texto && r.sit!=='na' ? `<div class="campo" style="margin:0 0 10px"><input placeholder="${esc(i.texto)} (se der pra ler)" value="${esc(r.texto||'')}" oninput="setTexto('${i.c}',this.value)" style="font-size:15px;font-weight:600"/></div>` : ''}
     ${pedeFoto || nFotos ? `<div class="fotos">${(r.fotos||[]).map((fid,k)=>`<div class="foto-th" data-foto="${fid}" onclick="verFoto(this,'${i.c} ${esc(i.t)}')"><span class="nub">${k+1}</span><button class="x" onclick="event.stopPropagation();removerFoto('${i.c}','${fid}')" aria-label="Apagar foto">×</button></div>`).join('')}
-      ${pedeFoto && nFotos<CONFIG.FOTOS_POR_ITEM ? `<button class="btn-foto ${nFotos?'':'principal'}" onclick="tirarFoto('${i.c}')"><svg class="ic"><use href="#i-camera"/></svg>${nFotos?'+ Foto':'Tirar foto'}</button><button class="btn-galeria" onclick="tirarFoto('${i.c}',true)">da galeria</button>` : ''}</div>` : (!r.sit && i.tipo!=='avaria' ? `<div class="fotos"><button class="btn-foto principal" onclick="tirarFoto('${i.c}')"><svg class="ic"><use href="#i-camera"/></svg>Tirar foto</button><button class="btn-galeria" onclick="tirarFoto('${i.c}',true)">da galeria</button></div>` : '')}
+      ${pedeFoto && nFotos<CONFIG.FOTOS_POR_ITEM ? `<button class="btn-foto ${nFotos?'':'principal'}" onclick="tirarFoto('${i.c}')"><svg class="ic"><use href="#i-camera"/></svg>${nFotos?'+ Foto':'Tirar foto'}</button><button class="btn-foto" onclick="tirarFoto('${i.c}',true)"><span style="font-size:22px;line-height:1">📁</span>Arquivo</button>` : ''}</div>` : (!r.sit && i.tipo!=='avaria' ? `<div class="fotos"><button class="btn-foto principal" onclick="tirarFoto('${i.c}')"><svg class="ic"><use href="#i-camera"/></svg>Tirar foto</button><button class="btn-foto" onclick="tirarFoto('${i.c}',true)"><span style="font-size:22px;line-height:1">📁</span>Arquivo</button></div>` : '')}
     ${(r.sit==='avaria' || r.sit==='sim') ? `<div class="campo"><textarea placeholder="Descreva a avaria: onde, tamanho, como está *" oninput="setObs('${i.c}',this.value)">${esc(r.obs||'')}</textarea></div>`
       : r.sit && (r.obs || r._obsAberta) ? `<div class="campo"><textarea placeholder="Observação" oninput="setObs('${i.c}',this.value)">${esc(r.obs||'')}</textarea></div>`
       : r.sit ? `<button class="link-obs" onclick="abrirObs('${i.c}')">+ observação</button>` : ''}
@@ -2577,7 +2578,8 @@ function tirarFoto(c, galeria){
   Camera.abrir({ titulo: `${c} ${ITEM[c].t}`, multipla: true,
     contar: ()=>(resp(c).fotos||[]).length, limite: CONFIG.FOTOS_POR_ITEM,
     aoCapturar: async arq=>{ window._fotoAlvo = c; await fotoEscolhida({ files:[arq], value:'' }); },
-    reserva: ()=>document.getElementById('in-camera').click() });
+    reserva: ()=>document.getElementById('in-camera').click(),
+    arquivo: ()=>{ window._fotoAlvo = c; document.getElementById('in-galeria').click(); } });
 }
 /* Câmera dentro do app: abre direto na TRASEIRA (o capture="environment" do
    arquivo é ignorado por vários celulares, que abrem na última câmera usada). */
@@ -2590,6 +2592,7 @@ const Camera = {
     if (!el) { el = document.createElement('div'); el.id = 'camera'; document.body.appendChild(el); }
     el.innerHTML = `<div class="cam-topo"><button class="cam-x" onclick="Camera.fechar()" aria-label="Fechar">✕</button><div class="cam-tit">${esc(op.titulo||'')}</div><span class="cam-n" id="cam-n"></span></div>
       <video id="cam-video" autoplay playsinline muted></video><div class="cam-flash" id="cam-flash"></div>
+      ${op.arquivo ? `<button class="cam-arq" onclick="Camera.daGaleria()">📁 Escolher dos arquivos</button>` : ''}
       <div class="cam-base"><button class="cam-lado" onclick="Camera.virar()" aria-label="Trocar câmera">🔄</button>
         <button class="cam-disparo" id="cam-disparo" onclick="Camera.capturar()" aria-label="Tirar foto"></button>
         <button class="cam-lado cam-ok" onclick="Camera.fechar()">${op.multipla ? 'Pronto' : 'Cancelar'}</button></div>`;
@@ -2628,6 +2631,7 @@ const Camera = {
     if (!op.multipla || (op.limite && op.contar && op.contar() >= op.limite)) this.fechar();
   },
   _parar(){ if (this._s) { this._s.getTracks().forEach(t=>t.stop()); this._s = null; } },
+  daGaleria(){ const f = this._op && this._op.arquivo; this.fechar(); if (f) f(); },
   fechar(){ this._parar(); const el = document.getElementById('camera'); if (el) { el.classList.remove('aberta'); el.innerHTML = ''; } document.body.style.overflow = ''; this._op = null; }
 };
 document.addEventListener('visibilitychange', ()=>{ if (document.hidden && Camera._s) Camera.fechar(); });
