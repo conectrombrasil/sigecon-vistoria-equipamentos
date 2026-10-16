@@ -356,6 +356,28 @@
   .opcao-lista .opcao-ic{font-size:22px;width:28px;text-align:center;}
   .opcao-lista .opcao-perigo{color:var(--err-txt);border-color:rgba(224,85,85,.35);}
   .modal .campo select,.modal .campo input{background:var(--navy3);}
+  /* Lista com busca (picker) — tela cheia no celular, janela no tablet */
+  .pk-overlay{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;}
+  .pk-overlay.aberto{display:flex;animation:fade .15s ease-out;}
+  .pk{background:var(--navy2);width:100%;max-width:640px;height:88vh;border-radius:22px 22px 0 0;display:flex;flex-direction:column;border-top:1px solid var(--border2);padding:12px 14px calc(10px + var(--safe-bot));}
+  @media (min-width:700px){ .pk-overlay{align-items:center;} .pk{height:76vh;border-radius:18px;border:1px solid var(--border2);} }
+  .pk-cab{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .pk-cab b{flex:1;font-size:17px;}
+  .pk-cab button{background:none;border:none;color:var(--text2);font-size:22px;width:44px;height:44px;cursor:pointer;}
+  .pk-lista{flex:1;overflow-y:auto;margin-top:10px;-webkit-overflow-scrolling:touch;}
+  .pk-grupo{font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--text3);margin:12px 4px 6px;}
+  .pk-it{width:100%;text-align:left;min-height:52px;padding:12px 14px;margin-bottom:6px;border-radius:12px;border:1px solid var(--border);background:var(--navy3);color:var(--text);font-size:15.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;}
+  .pk-it small{display:block;font-size:12px;color:var(--text2);font-weight:500;margin-top:2px;}
+  .pk-it.sel{border-color:var(--orange);}
+  .pk-it:active{background:var(--navy4);}
+  .pk-vazio{text-align:center;color:var(--text3);padding:24px 8px;font-size:14px;}
+  .pk-campo{width:100%;min-height:50px;padding:12px 14px;border-radius:12px;border:1px solid var(--border2);background:var(--navy3);color:var(--text);font-size:16px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;}
+  .pk-campo span.vazio{color:var(--text3);}
+  .pk-campo::after{content:'▾';color:var(--text3);}
+  .sec-rapido{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;}
+  .sec-rapido button{flex:1;min-height:44px;border-radius:12px;border:1px dashed var(--border2);background:none;color:var(--text2);font-size:13.5px;font-weight:600;cursor:pointer;}
+  .confirma-lista{background:var(--navy3);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:0 0 14px;font-size:14px;max-height:40vh;overflow-y:auto;}
+  .confirma-lista div{padding:3px 0;}
 
   .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(127,127,127,.35);border-top-color:currentColor;border-radius:50%;animation:girar .7s linear infinite;}
   @keyframes girar{to{transform:rotate(360deg);}}
@@ -722,6 +744,13 @@
   </div>
 </div>
 
+<div class="pk-overlay" id="picker" onclick="if(event.target===this)fecharPicker()">
+  <div class="pk" role="dialog" aria-modal="true">
+    <div class="pk-cab"><b id="pk-titulo"></b><button onclick="fecharPicker()" aria-label="Fechar">✕</button></div>
+    <label class="busca"><svg class="ic" style="width:19px;height:19px"><use href="#i-busca"/></svg><input type="search" id="pk-busca" placeholder="Buscar…" oninput="renderPicker()" autocomplete="off"/></label>
+    <div class="pk-lista" id="pk-lista"></div>
+  </div>
+</div>
 <div class="visor" id="visor" onclick="if(event.target===this)fecharVisor()"><button onclick="fecharVisor()" aria-label="Fechar">✕</button><img id="visor-img" alt=""/><div class="cap" id="visor-cap"></div></div>
 <input type="file" id="in-camera" accept="image/*" capture="environment" hidden onchange="fotoEscolhida(this)"/>
 <input type="file" id="in-galeria" accept="image/*" multiple hidden onchange="fotoEscolhida(this)"/>
@@ -758,7 +787,7 @@ function relatorioVistoriaHtml(v, mob){
   const nFotos = itens.reduce((s,i)=>s+(i.fotos||[]).length, 0);
   const linha = (r, val) => val ? `<tr><th>${r}</th><td>${val}</td></tr>` : '';
   const gps = v.latitude!=null && v.longitude!=null ? `${Number(v.latitude).toFixed(6)}, ${Number(v.longitude).toFixed(6)}` : '';
-  const secoes = []; itens.forEach(i=>{ let s = secoes.find(x=>x.secao===i.secao); if (!s) secoes.push(s = { secao:i.secao, titulo:i.secao_titulo, itens:[] }); s.itens.push(i); });
+  const secoes = []; itens.filter(i=>i.situacao!=='na').forEach(i=>{ let s = secoes.find(x=>x.secao===i.secao); if (!s) secoes.push(s = { secao:i.secao, titulo:i.secao_titulo, itens:[] }); s.itens.push(i); });
   const fotosHtml = (fs, rot) => (fs||[]).length ? `<div class="rv-fotos">${fs.map((u,k)=>`<figure><img src="${_rvEsc(u)}" alt=""/>${rot?`<figcaption>${_rvEsc(rot)}${fs.length>1?' '+(k+1):''}</figcaption>`:''}</figure>`).join('')}</div>` : '';
   const itemHtml = i => {
     const st = rvSituacao(i, v.tipo), m = mobIt[i.codigo];
@@ -842,7 +871,7 @@ function relatorioVistoriaHtml(v, mob){
     </div>
 
     <h2>Resumo</h2>
-    <div class="rv-resumo"><div><b>${itens.length}</b>itens verificados</div><div class="ok"><b>${ok.length}</b>${des?'sem alteração':'sem avaria'}</div><div class="av"><b>${av.length}</b>${des?'novas avarias':'com avaria / ocorrência'}</div><div><b>${na.length}</b>não se aplica</div><div><b>${nFotos}</b>fotos</div></div>
+    <div class="rv-resumo"><div><b>${itens.length - na.length}</b>itens verificados</div><div class="ok"><b>${ok.length}</b>${des?'sem alteração':'sem avaria'}</div><div class="av"><b>${av.length}</b>${des?'novas avarias':'com avaria / ocorrência'}</div><div><b>${na.length}</b>não se aplica</div><div><b>${nFotos}</b>fotos</div></div>
     ${av.length ? `<div class="rv-avlista"><b>${des?'Novas avarias constatadas na desmobilização':'Avarias e ocorrências constatadas na mobilização'}:</b>${av.map(i=>`<div>• <b>${_rvEsc(i.codigo)}</b> ${_rvEsc(i.titulo)}${i.obs?' — '+_rvEsc(i.obs):''}</div>`).join('')}</div>` : `<div class="rv-avlista" style="border-color:#9fdcc0;background:#effaf5"><b>${des?'Nenhuma avaria nova em relação à mobilização.':'Nenhuma avaria constatada.'}</b></div>`}
 
     ${secoes.map((s,k)=>`<div class="rv-sec"><h2>${_rvEsc(s.secao)}. ${_rvEsc(s.titulo)}</h2><div class="rv-grade">${s.itens.map(itemHtml).join('')}</div></div>`).join('')}
@@ -867,7 +896,7 @@ function relatorioVistoriaHtml(v, mob){
    Mesmo projeto Supabase do SIGECON. Tabela: frota_vistorias.
    Fotos e assinaturas: Storage, espaço privado "frota-vistorias".
    ===================================================================== */
-const CONFIG = { VERSAO_APP: '1.6.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
+const CONFIG = { VERSAO_APP: '1.7.0', DIAS_SERVIDOR: 365, BUCKET: 'frota-vistorias', FOTO_MAX: 1600, FOTO_QUALIDADE: 0.72, FOTOS_POR_ITEM: 6 };
 const ENDERECO_INICIAL = location.hash + ' ' + location.search;
 const SUPABASE_URL = 'https://adfrybyxcamkuyewzyns.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZnJ5Ynl4Y2Fta3V5ZXd6eW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODQzNTcsImV4cCI6MjA5MTg2MDM1N30.DWzvf6tS-0TQ_zfXaq3MKE5eCwIz0gMyidAPBs-YuJ0';
@@ -1321,6 +1350,34 @@ function toast(msg, tipo){
   const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast mostrar '+(tipo||'');
   clearTimeout(_toastT); _toastT = setTimeout(()=>t.className='toast', 3200);
 }
+// Lista com busca: substitui as listas suspensas compridas (tipo de equipamento, obra).
+// itens: [{v, t, sub, g}] (g = grupo). Abre por cima de qualquer janela.
+let _pk = null;
+function escolherDaLista(titulo, itens, atual, onEscolher, opcoes){
+  _pk = { itens, atual, onEscolher, vazio: opcoes?.vazio || null };
+  document.getElementById('pk-titulo').textContent = titulo;
+  const b = document.getElementById('pk-busca'); b.value = '';
+  renderPicker();
+  document.getElementById('picker').classList.add('aberto');
+  if (itens.length > 8) setTimeout(()=>b.focus(), 120);
+}
+function renderPicker(){
+  if (!_pk) return;
+  const q = _semAc(document.getElementById('pk-busca').value||'').trim();
+  const lista = _pk.itens.filter(i=>!q || _semAc(i.t + ' ' + (i.sub||'') + ' ' + (i.g||'')).includes(q));
+  let html = '', g = null;
+  if (_pk.vazio && !q) html += `<button class="pk-it ${!_pk.atual?'sel':''}" onclick="_pkEscolher(null)"><div>${esc(_pk.vazio)}</div></button>`;
+  lista.forEach((i,k)=>{
+    if (i.g && i.g!==g && !q) { g = i.g; html += `<div class="pk-grupo">${esc(g)}</div>`; }
+    html += `<button class="pk-it ${String(i.v)===String(_pk.atual)?'sel':''}" onclick="_pkEscolher(${_pk.itens.indexOf(i)})"><div>${esc(i.t)}${i.sub?`<small>${esc(i.sub)}</small>`:''}</div></button>`;
+  });
+  if (!lista.length) html += `<div class="pk-vazio">Nada encontrado para "${esc(document.getElementById('pk-busca').value)}".</div>`;
+  document.getElementById('pk-lista').innerHTML = html;
+}
+function _pkEscolher(k){ const p = _pk; fecharPicker(); if (p) p.onEscolher(k==null ? null : p.itens[k]); }
+function fecharPicker(){ document.getElementById('picker').classList.remove('aberto'); _pk = null; }
+const ROT_CATEGORIA = { maquina_pesada:'Máquinas pesadas', linha_amarela:'Linha amarela', veiculo:'Veículos', linha_branca:'Linha branca', equipamento:'Equipamentos', ferramenta:'Ferramentas', outro:'Outros' };
+
 function abrirModal(titulo, html){
   document.getElementById('modal-titulo').textContent = titulo;
   document.getElementById('modal-corpo').innerHTML = html;
@@ -2294,13 +2351,22 @@ function abrirCadastroEquip(){
   abrirModal('Cadastrar equipamento', `<div class="passo-desc">O equipamento entra no SIGECON quando a vistoria for enviada.</div>
     <div class="resumo-equip" style="margin-bottom:14px"><div class="equip-ic">🏢</div><div style="flex:1;min-width:0"><div class="card-sub">Fornecedor</div><div class="card-titulo" style="font-size:14.5px">${esc(f.razao_social)}</div></div></div>
     <label class="rotulo">Tipo de equipamento *</label>
-    <div class="campo"><select id="ce-tipo" onchange="ceAtualizarPrefixo()"><option value="">Escolha…</option>${tipos.map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('')}</select></div>
+    <div class="campo"><input type="hidden" id="ce-tipo"/><button type="button" class="pk-campo" id="ce-tipo-btn" onclick="ceEscolherTipo()"><span class="vazio">Toque para escolher (com busca)</span></button></div>
     <div class="linha2"><div class="campo"><label class="rotulo">Prefixo</label><input id="ce-pref-base" disabled placeholder="—"/></div><div class="campo"><label class="rotulo">Número</label><input id="ce-pref-num" inputmode="numeric" placeholder="01"/></div></div>
     <div class="linha2"><div class="campo"><label class="rotulo">Marca</label><input id="ce-marca" placeholder="Ex.: Caterpillar"/></div><div class="campo"><label class="rotulo">Modelo</label><input id="ce-modelo" placeholder="Ex.: 320D"/></div></div>
     <div class="linha2"><div class="campo"><label class="rotulo">Ano</label><input id="ce-ano" inputmode="numeric" placeholder="2022"/></div><div class="campo"><label class="rotulo">Placa</label><input id="ce-placa" placeholder="ABC1D23" style="text-transform:uppercase"/></div></div>
     <div class="campo"><label class="rotulo">Nº de série / chassi</label><input id="ce-serie"/></div>
     <div class="erro-msg" id="ce-erro"></div>
     <button class="btn" onclick="salvarCadastroEquip()">Cadastrar e escolher</button>`);
+}
+function ceEscolherTipo(){
+  const tipos = (Repo.cat?.tipos||[]).slice().sort((a,b)=>(ROT_CATEGORIA[a.categoria]||'~').localeCompare(ROT_CATEGORIA[b.categoria]||'~','pt-BR') || a.nome.localeCompare(b.nome,'pt-BR'));
+  escolherDaLista('Tipo de equipamento', tipos.map(t=>({ v:t.id, t:t.nome, sub:t.prefixo?'Prefixo '+t.prefixo:'', g:ROT_CATEGORIA[t.categoria]||'Outros' })), document.getElementById('ce-tipo').value, it=>{
+    if (!it) return;
+    document.getElementById('ce-tipo').value = it.v;
+    document.getElementById('ce-tipo-btn').innerHTML = `<span>${esc(it.t)}</span>`;
+    ceAtualizarPrefixo();
+  });
 }
 function ceAtualizarPrefixo(){ const t = Repo.tipo(document.getElementById('ce-tipo').value); document.getElementById('ce-pref-base').value = t?.prefixo || ''; }
 async function salvarCadastroEquip(){
@@ -2344,13 +2410,20 @@ function passoDados(){
   return `<div class="passo-titulo">Dados da vistoria</div>
     <div class="passo-desc">Confira a obra, a data e o local.</div>
     <label class="rotulo">Obra</label>
-    <div class="campo"><select onchange="const o=Repo.obra(this.value);vist.obra_id=o?.id||null;vist.obra_nome=o?.nome||'';if(o)Prefs.set('obra',o.id);autosalvar()"><option value="">Sem obra definida</option>${obras.map(o=>`<option value="${o.id}" ${vist.obra_id===o.id?'selected':''}>${esc(o.nome)}</option>`).join('')}</select></div>
+    <div class="campo"><button type="button" class="pk-campo" onclick="escolherObraVist()">${vist.obra_id ? `<span>${esc(vist.obra_nome||Repo.obra(vist.obra_id)?.nome||'')}</span>` : '<span class="vazio">Sem obra definida</span>'}</button></div>
     <label class="rotulo">Data e hora</label>
     <div class="campo"><input type="datetime-local" value="${paraCampoDataHora(vist.data_vistoria)}" onchange="if(this.value){vist.data_vistoria=new Date(this.value).toISOString();autosalvar();}"/></div>
     <label class="rotulo">Local</label>
     <div class="campo"><input value="${esc(vist.local)}" placeholder="Ex.: pátio do canteiro, frente de serviço 2" oninput="vist.local=this.value;autosalvar()"/></div>
     <div class="campo" id="gps-linha">${gpsHtml()}</div>
     <div class="barra-acao"><button class="btn" onclick="irPasso(2)">Ir para o checklist</button></div>`;
+}
+function escolherObraVist(){
+  escolherDaLista('Obra', Repo.obras().map(o=>({ v:o.id, t:o.nome })), vist.obra_id, it=>{
+    const o = it ? Repo.obra(it.v) : null;
+    vist.obra_id = o?.id || null; vist.obra_nome = o?.nome || ''; if (o) Prefs.set('obra', o.id);
+    autosalvar(true); renderVist();
+  }, { vazio:'Sem obra definida' });
 }
 function gpsHtml(){
   return vist.latitude!=null
@@ -2407,8 +2480,25 @@ function secaoHtml(s){
   const aberta = secAberta===s.s;
   return `<div id="sec-${s.s}"><button class="sec-cab ${feitos===s.itens.length?'completa':''} ${av?'com-avaria':''} ${aberta?'aberta':''}" onclick="abrirSecao('${s.s}')">
       <span class="num">${feitos===s.itens.length?'✓':s.s}</span><span>${esc(s.t)}</span><span class="prog">${av?'⚠️ '+av+' · ':''}${feitos}/${s.itens.length}</span><svg class="ic" style="width:18px;height:18px;${aberta?'transform:rotate(180deg)':''}"><use href="#i-baixo"/></svg></button>
-    ${aberta ? `<div class="sec-corpo">${s.itens.map(i=>itemHtml(Object.assign({ secao:s.s, secao_titulo:s.t }, i))).join('')}
+    ${aberta ? `<div class="sec-corpo">${atalhosSecao(s)}${s.itens.map(i=>itemHtml(Object.assign({ secao:s.s, secao_titulo:s.t }, i))).join('')}
       ${proximaSecao(s.s) ? `<button class="btn btn-secundario" onclick="abrirSecao('${proximaSecao(s.s)}', true)">Próxima: ${esc(CHECKLIST.find(x=>x.s===proximaSecao(s.s)).t)}</button>` : ''}</div>` : ''}</div>`;
+}
+// Atalhos para andar rápido: marca de uma vez os itens que ainda não foram respondidos
+function atalhosSecao(s){
+  const semResp = s.itens.filter(i=>!vist.resp[i.c]?.sit);
+  const nAv = semResp.filter(i=>i.tipo==='avaria').length, nNa = semResp.filter(i=>i.tipo!=='avaria' && i.opc).length;
+  if (!nAv && !nNa) return '';
+  const des = vist.tipo==='desmobilizacao';
+  return `<div class="sec-rapido">${nAv?`<button onclick="marcarRestantes('${s.s}','avaria')">✅ ${des?'Nada novo':'Não há'} nos ${nAv} que faltam</button>`:''}${nNa?`<button onclick="marcarRestantes('${s.s}','na')">➖ N/A nos ${nNa} opcionais que faltam</button>`:''}</div>`;
+}
+function marcarRestantes(sec, qual){
+  const s = CHECKLIST.find(x=>x.s===sec); if (!s) return;
+  s.itens.forEach(i=>{
+    if (vist.resp[i.c]?.sit) return;
+    if (qual==='avaria' && i.tipo==='avaria') resp(i.c).sit = 'nao';
+    if (qual==='na' && i.tipo!=='avaria' && i.opc) resp(i.c).sit = 'na';
+  });
+  autosalvar(true); abrirSecao(sec, true);
 }
 function proximaSecao(s){ const k = CHECKLIST.findIndex(x=>x.s===s); return CHECKLIST[k+1]?.s || null; }
 function abrirSecao(s, rolar){
@@ -2580,6 +2670,9 @@ async function hidratarFotos(raiz){
 function verFoto(el, cap){ if (el.dataset.url) abrirVisor(el.dataset.url, cap); }
 
 /* ---------- 4. Revisão ---------- */
+// Mínimo para concluir: a foto geral do equipamento (1.1). O resto vira aviso, não trava.
+const ITEM_MINIMO = '1.1';
+function temMinimo(){ return ((vist.resp[ITEM_MINIMO]||{}).fotos||[]).length > 0; }
 function passoRevisao(){
   const faltam = ITENS.filter(i=>!itemCompleto(i));
   const av = ITENS.filter(i=>['avaria','sim'].includes(vist.resp[i.c]?.sit));
@@ -2587,12 +2680,13 @@ function passoRevisao(){
   const des = vist.tipo==='desmobilizacao';
   return `<div class="passo-titulo">Revisão</div>
     <div class="numeros3"><div><b>${ITENS.length-faltam.length}</b><span>de ${ITENS.length} itens feitos</span></div><div><b style="color:var(--warn-txt)">${av.length}</b><span>${des?'novas avarias':'com avaria'}</span></div><div><b>${na.length}</b><span>não se aplica</span></div></div>
-    ${faltam.length ? `<div class="lista-pend"><b>Faltam ${faltam.length} item${faltam.length>1?'s':''}:</b>${faltam.map(i=>`<button onclick="irParaItem('${i.c}')">• <b>${i.c}</b> ${esc(i.t)} — <span style="color:var(--text2)">${faltaNoItem(i)}</span></button>`).join('')}</div>` : `<div class="lista-ok">✓ Todos os itens do checklist foram feitos.</div>`}
+    ${!temMinimo() ? `<div class="ajuda alerta" style="margin:0 0 10px">📷 Para concluir, tire pelo menos a <b>foto geral do equipamento</b> (item 1.1). <button class="link-obs" onclick="irParaItem('${ITEM_MINIMO}')">ir para o item</button></div>` : ''}
+    ${faltam.length ? `<div class="lista-pend"><b>Ainda em aberto: ${faltam.length} item${faltam.length>1?'s':''}</b> <span style="font-weight:500;color:var(--text2)">(não impede concluir; itens sem resposta não aparecem no relatório)</span>${faltam.map(i=>`<button onclick="irParaItem('${i.c}')">• <b>${i.c}</b> ${esc(i.t)} — <span style="color:var(--text2)">${faltaNoItem(i)}</span></button>`).join('')}</div>` : `<div class="lista-ok">✓ Todos os itens do checklist foram feitos.</div>`}
     ${av.length ? `<div class="lista-av"><b>${des?'Novas avarias':'Avarias registradas'}:</b>${av.map(i=>`<div><b>${i.c}</b> ${esc(i.t)}${vist.resp[i.c].obs?' — '+esc(vist.resp[i.c].obs):''}</div>`).join('')}</div>` : ''}
     <label class="rotulo">Observações gerais (opcional)</label>
     <div class="campo"><textarea placeholder="Algo mais que deve constar no relatório" oninput="vist.observacoes=this.value;autosalvar()">${esc(vist.observacoes)}</textarea></div>
     <button class="btn btn-secundario" style="margin-bottom:8px" onclick="abrirRelatorio(vist.id, vist)">👁️ Ver prévia do relatório</button>
-    <div class="barra-acao"><button class="btn" ${faltam.length?'disabled':''} onclick="irPasso(4)">${faltam.length?'Complete o checklist pra assinar':'Ir para as assinaturas'}</button></div>`;
+    <div class="barra-acao"><button class="btn" ${temMinimo()?'':'disabled'} onclick="irPasso(4)">${temMinimo()?'Ir para as assinaturas':'Falta a foto geral do equipamento'}</button></div>`;
 }
 function irParaItem(c){
   secAberta = ITEM[c].secao; passoAtual = 2; autosalvar(); renderVist();
@@ -2808,16 +2902,32 @@ function confirmarAssin(quem){
   vist.rep.assin = { img: pad.imagem(), em: new Date().toISOString() };
   autosalvar(true); renderVist();
 }
+// Antes de concluir: mostra o que ficou em aberto e pede confirmação (não trava).
+let _concluirConfirmado = false;
+function confirmarConclusao(){
+  const semResp = ITENS.filter(i=>!vist.resp[i.c]?.sit);
+  const incompletos = ITENS.filter(i=>vist.resp[i.c]?.sit && !itemCompleto(i));
+  const r = vist.rep, avisos = [];
+  if (semResp.length) avisos.push(`<b>${semResp.length}</b> ite${semResp.length>1?'ns':'m'} sem resposta (não vão aparecer no relatório)`);
+  incompletos.forEach(i=>avisos.push(`<b>${i.c}</b> ${esc(i.t)} — ${faltaNoItem(i)}`));
+  if (!r.recusou && !r.foto && !r.foto_recusou) avisos.push('Sem a foto do representante do fornecedor');
+  if (!vist.obra_id) avisos.push('Sem obra definida');
+  abrirModal(avisos.length ? 'Concluir mesmo assim?' : 'Concluir a vistoria?', `
+    ${avisos.length ? `<div class="passo-desc">A vistoria tem o mínimo para ser concluída, mas ainda falta:</div><div class="confirma-lista">${avisos.map(a=>`<div>• ${a}</div>`).join('')}</div>` : `<div class="passo-desc">Todos os itens foram preenchidos.</div>`}
+    <div class="passo-desc" style="margin-top:0">Depois de concluir, a vistoria <b>não pode mais ser alterada</b>.</div>
+    <div style="display:flex;gap:8px">${avisos.length?`<button class="btn btn-secundario" style="flex:1" onclick="fecharModal();irPasso(3)">Voltar e completar</button>`:`<button class="btn btn-secundario" style="flex:1" onclick="fecharModal()">Cancelar</button>`}
+    <button class="btn" style="flex:1" onclick="fecharModal();_concluirConfirmado=true;concluirVistoria()">Concluir</button></div>`);
+}
 async function concluirVistoria(){
   const erro = document.getElementById('assin-erro'); erro.textContent = '';
-  const faltam = ITENS.filter(i=>!itemCompleto(i));
-  if (faltam.length) { erro.textContent = `Faltam ${faltam.length} itens no checklist.`; return; }
+  if (!temMinimo()) { erro.textContent = 'Falta a foto geral do equipamento (item 1.1).'; return; }
   if (!vist.assin_vist) { erro.textContent = 'Falta a assinatura do vistoriador (toque em "Assinar como vistoriador").'; return; }
   const r = vist.rep;
   if (r.recusou) { if (!(r.motivo||'').trim()) { erro.textContent = 'Escreva o motivo de o representante não assinar.'; return; } }
   else { if (!r.nome.trim()) { erro.textContent = 'Escreva o nome do representante.'; return; } if (!r.assin) { erro.textContent = 'Falta a assinatura do representante (ou marque que ele não assinou).'; return; }
-    if (!r.foto && !r.foto_recusou) { erro.textContent = 'Tire a foto do representante (ou marque que ele não quis tirar a foto).'; return; } }
-  if (!confirm('Concluir a vistoria? Depois disso ela não pode mais ser alterada.')) return;
+  }
+  if (!_concluirConfirmado) { confirmarConclusao(); return; }
+  _concluirConfirmado = false;
   vist.horimetro = vist.resp['1.3']?.sit==='na' ? null : (vist.resp['1.3']?.valor ?? null);
   vist.hodometro = vist.resp['1.4']?.sit==='na' ? null : (vist.resp['1.4']?.valor ?? null);
   if (!vist.equipamento.numero_serie && vist.resp['1.5']?.texto) vist.equipamento.numero_serie = vist.resp['1.5'].texto;
