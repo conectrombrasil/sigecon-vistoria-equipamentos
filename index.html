@@ -2614,6 +2614,7 @@ const Camera = {
         <button class="cam-disparo" id="cam-disparo" onclick="Camera.capturar()" aria-label="Tirar foto"></button>
         <button class="cam-lado cam-ok" onclick="Camera.fechar()">${op.multipla ? 'Pronto' : 'Cancelar'}</button></div>`;
     el.classList.add('aberta'); document.body.style.overflow = 'hidden';
+    this._rotacao(true);
     this._contador();
     if (!(await this._ligar())) { this.fechar(); op.reserva && op.reserva(); }
   },
@@ -2635,6 +2636,20 @@ const Camera = {
       } catch (e) { if (e && e.name==='NotAllowedError') { toast('A câmera foi bloqueada. Libere o acesso nas configurações do navegador.', 'erro'); return false; } }
     }
     return false;
+  },
+  /* Libera a rotação só enquanto a câmera está aberta. No Android o app instalado pode estar travado em retrato
+     pelo manifesto antigo; pedir tela cheia + lock('any') pela API dispensa reinstalar. */
+  async _rotacao(liga){
+    try {
+      if (liga) {
+        const el = document.getElementById('camera');
+        if (el && !document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI:'hide' }).catch(()=>{});
+        if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('any').catch(()=>{});
+      } else {
+        if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen().catch(()=>{});
+      }
+    } catch (e) {}
   },
   async virar(){ this._devId = null; this._frente = !this._frente; if (!(await this._ligar())) { this._frente = !this._frente; await this._ligar(); } },
   /* ── ZOOM ── Zoom óptico/do aparelho quando o navegador oferece (Android/Chrome); senão, zoom digital (recorte). */
@@ -2715,7 +2730,7 @@ const Camera = {
   },
   _parar(){ if (this._s) { this._s.getTracks().forEach(t=>t.stop()); this._s = null; } this._trk = null; },
   daGaleria(){ const f = this._op && this._op.arquivo; this.fechar(); if (f) f(); },
-  fechar(){ this._parar(); const el = document.getElementById('camera'); if (el) { el.classList.remove('aberta'); el.innerHTML = ''; } document.body.style.overflow = ''; this._op = null; this._devId = null; this._lentes = []; }
+  fechar(){ this._parar(); this._rotacao(false); const el = document.getElementById('camera'); if (el) { el.classList.remove('aberta'); el.innerHTML = ''; } document.body.style.overflow = ''; this._op = null; this._devId = null; this._lentes = []; }
 };
 document.addEventListener('visibilitychange', ()=>{ if (document.hidden && Camera._s) Camera.fechar(); });
 async function fotoEscolhida(input){
