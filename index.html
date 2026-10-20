@@ -290,6 +290,21 @@
   .cam-chips button{min-width:42px;height:32px;border-radius:16px;border:none;background:transparent;color:#fff;font-size:13px;font-weight:700;cursor:pointer;padding:0 8px;}
   .cam-chips button.on{background:#fff;color:#000;}
   .cam-zr{width:min(260px,70vw);accent-color:#F97316;}
+  #ef{position:fixed;inset:0;z-index:130;background:#000;color:#fff;display:none;flex-direction:column;}
+  #ef.aberto{display:flex;}
+  .ef-topo{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 14px 10px;}
+  .ef-topo b{flex:1;font-size:15px;}
+  .ef-topo button{height:40px;min-width:40px;border-radius:20px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:15px;font-weight:700;padding:0 14px;cursor:pointer;}
+  .ef-topo button.ok{background:var(--orange);}
+  .ef-area{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px;touch-action:none;}
+  #ef-cv{background:#111;border-radius:4px;touch-action:none;cursor:grab;}
+  .ef-ctl{padding:10px 14px calc(14px + var(--safe-bot));display:flex;flex-direction:column;gap:10px;background:rgba(255,255,255,.06);}
+  .ef-lin{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;}
+  .ef-lin button{height:38px;min-width:44px;border-radius:19px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:15px;font-weight:700;padding:0 12px;cursor:pointer;}
+  .ef-lin button.on{background:#fff;color:#000;}
+  .ef-lin input[type=range]{flex:1;min-width:120px;accent-color:#F97316;}
+  .ef-dica{font-size:11.5px;color:#cbd2dc;text-align:center;line-height:1.4;}
+  @media (orientation:landscape){ #ef{flex-direction:row;flex-wrap:wrap;} .ef-topo{width:100%;padding-bottom:4px;} .ef-area{flex:1 1 55%;height:calc(100% - 60px);} .ef-ctl{flex:0 0 300px;overflow:auto;max-height:calc(100% - 60px);} }
   .cam-lente{min-width:64px;height:44px;border-radius:22px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:14px;font-weight:700;cursor:pointer;}
   @media (orientation:landscape){
     #camera .cam-vid{position:absolute;top:0;bottom:0;left:0;right:calc(124px + env(safe-area-inset-right,0px));}
@@ -638,6 +653,7 @@
 
   /* relatório (tela) */
   #tela-relatorio .conteudo{padding:12px 10px 100px;}
+  .rel-dica{font-size:12px;color:var(--text2);text-align:center;margin:0 0 8px;}
   .rel-folha{background:#fff;color:#111;border-radius:10px;padding:14px;box-shadow:var(--sombra);}
   .rel-acoes{position:fixed;left:0;right:0;bottom:0;z-index:25;display:flex;gap:8px;padding:12px 16px calc(12px + var(--safe-bot));background:linear-gradient(to bottom,var(--navy-0),var(--navy) 30%);}
   .rel-acoes .btn{flex:1;}
@@ -748,7 +764,7 @@
       <div class="topo-sub" id="rel-sub"></div>
     </div>
   </div>
-  <div class="conteudo"><div class="rel-folha" id="rel-folha"></div></div>
+  <div class="conteudo"><div class="rel-dica">👆 Toque numa foto para ampliar, girar e reenquadrar antes de imprimir.</div><div class="rel-folha" id="rel-folha"></div></div>
   <div class="rel-acoes" id="rel-acoes"></div>
 </div>
 
@@ -804,7 +820,7 @@ function relatorioVistoriaHtml(v, mob){
   const linha = (r, val) => val ? `<tr><th>${r}</th><td>${val}</td></tr>` : '';
   const gps = v.latitude!=null && v.longitude!=null ? `${Number(v.latitude).toFixed(6)}, ${Number(v.longitude).toFixed(6)}` : '';
   const secoes = []; itens.filter(i=>i.situacao!=='na').forEach(i=>{ let s = secoes.find(x=>x.secao===i.secao); if (!s) secoes.push(s = { secao:i.secao, titulo:i.secao_titulo, itens:[] }); s.itens.push(i); });
-  const fotosHtml = (fs, rot) => (fs||[]).length ? `<div class="rv-fotos">${fs.map((u,k)=>`<figure><img src="${_rvEsc(u)}" alt=""/>${rot?`<figcaption>${_rvEsc(rot)}${fs.length>1?' '+(k+1):''}</figcaption>`:''}</figure>`).join('')}</div>` : '';
+  const fotosHtml = (fs, rot, cod) => (fs||[]).length ? `<div class="rv-fotos">${fs.map((u,k)=>`<figure><img src="${_rvEsc(u)}" alt=""${cod?` data-cod="${_rvEsc(cod)}" data-k="${k}"`:''}/>${rot?`<figcaption>${_rvEsc(rot)}${fs.length>1?' '+(k+1):''}</figcaption>`:''}</figure>`).join('')}</div>` : '';
   const itemHtml = i => {
     const st = rvSituacao(i, v.tipo), m = mobIt[i.codigo];
     const val = i.tipo==='medidor' && i.situacao!=='na' && i.valor!=null ? `<div class="rv-val">${_rvNum(i.valor)} ${_rvEsc(i.unidade||'')}</div>` : '';
@@ -812,7 +828,7 @@ function relatorioVistoriaHtml(v, mob){
     return `<div class="rv-item ${st.c}">
       <div class="rv-item-cab"><span class="rv-cod">${_rvEsc(i.codigo)}</span><b>${_rvEsc(i.titulo)}</b><span class="rv-st ${st.c}">${st.t}</span></div>
       ${val}${i.texto ? `<div class="rv-val">${_rvEsc(i.texto)}</div>` : ''}
-      ${comp ? `<div class="rv-comp"><div><div class="rv-comp-t">Mobilização · ${_rvData(mob.data_vistoria)}</div>${fotosHtml(m.fotos)}</div><div><div class="rv-comp-t">Desmobilização · ${_rvData(v.data_vistoria)}</div>${fotosHtml(i.fotos) || '<div class="rv-sem">Sem foto</div>'}</div></div>` : fotosHtml(i.fotos)}
+      ${comp ? `<div class="rv-comp"><div><div class="rv-comp-t">Mobilização · ${_rvData(mob.data_vistoria)}</div>${fotosHtml(m.fotos)}</div><div><div class="rv-comp-t">Desmobilização · ${_rvData(v.data_vistoria)}</div>${fotosHtml(i.fotos, null, i.codigo) || '<div class="rv-sem">Sem foto</div>'}</div></div>` : fotosHtml(i.fotos, null, i.codigo)}
       ${i.obs ? `<div class="rv-obs"><b>Obs.:</b> ${_rvEsc(i.obs)}</div>` : ''}
     </div>`;
   };
@@ -851,13 +867,16 @@ function relatorioVistoriaHtml(v, mob){
   .rv-st.ok{background:#dff6ec;color:#1d8a5a;} .rv-st.av{background:#fdecc8;color:#8a5200;} .rv-st.na{background:#eef2f7;color:#666;} .rv-st.pend{background:#fde2e2;color:#b02a2a;}
   .rv-fotos{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
   .rv-fotos figure{margin:0;}
-  .rv-fotos img{width:100%;height:120px;object-fit:cover;border-radius:4px;border:1px solid #e3e8ee;display:block;}
+  .rv-fotos figure{break-inside:avoid;}
+  .rv-fotos img{width:100%;height:auto;border-radius:4px;border:1px solid #e3e8ee;display:block;}
+  .rv-fotos img[data-cod]{cursor:zoom-in;}
   .rv-fotos figcaption{font-size:9px;color:#666;}
   .rv-item .rv-fotos:has(figure:only-child){grid-template-columns:1fr;}
-  .rv-item .rv-fotos:has(figure:only-child) img{height:170px;}
+  .rv-item .rv-fotos:has(figure:only-child) img{width:56%;}
   .rv-comp{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
   .rv-comp .rv-fotos{grid-template-columns:1fr;}
-  .rv-comp .rv-fotos img{height:110px;}
+  .rv-comp .rv-fotos img{width:100%;}
+  .rv-item .rv-comp .rv-fotos:has(figure:only-child) img{width:100%;}
   .rv-comp-t{font-size:9px;font-weight:700;color:#555;margin-bottom:2px;}
   .rv-sem{font-size:9.5px;color:#999;border:1px dashed #ccd;border-radius:4px;height:110px;display:flex;align-items:center;justify-content:center;}
   .rv-val{font-size:13px;font-weight:800;margin:2px 0 4px;}
@@ -1762,13 +1781,13 @@ const Sinc = {
         const itens = [];
         for (const i of ITENS) {
           const r = v.resp[i.c]; if (!r || !r.sit) continue;
-          const caminhos = [];
+          const caminhos = [], enqMap = {};
           for (const fid of (r.fotos||[])) {
             const f = await BD.pegar('fotos', fid); if (!f) continue;
             if (!f.caminho) { const c = `${v.id}/${i.c.replace('.','-')}-${fid.slice(0,8)}.jpg`; await subirArquivo(c, f.blob, 'image/jpeg'); f.caminho = c; await BD.gravar('fotos', f); }
-            caminhos.push(f.caminho);
+            caminhos.push(f.caminho); if (r.enq && r.enq[fid]) enqMap[f.caminho] = r.enq[fid];
           }
-          itens.push({ codigo:i.c, secao:i.secao, secao_titulo:i.secao_titulo, titulo:i.t, tipo:i.tipo, situacao:r.sit, obs:r.obs||'', valor:r.valor ?? null, unidade:i.un||null, texto:r.texto||'', fotos:caminhos });
+          itens.push({ codigo:i.c, secao:i.secao, secao_titulo:i.secao_titulo, titulo:i.t, tipo:i.tipo, situacao:r.sit, obs:r.obs||'', valor:r.valor ?? null, unidade:i.un||null, texto:r.texto||'', fotos:caminhos, ...(Object.keys(enqMap).length ? { enq:enqMap } : {}) });
         }
         // assinaturas
         if (v.assin_vist?.img && !v.assin_vist.caminho) { const c = `${v.id}/assinatura-vistoriador.png`; await subirArquivo(c, await dataUrlParaBlob(v.assin_vist.img), 'image/png'); v.assin_vist.caminho = c; }
@@ -3050,8 +3069,9 @@ async function relDeLocal(v){
   const itens = [];
   for (const i of ITENS) {
     const r = v.resp[i.c]; if (!r || !r.sit) continue;
-    const fotos = []; for (const f of (r.fotos||[])) { const u = await urlFoto(f); if (u) fotos.push(u); }
-    itens.push({ codigo:i.c, secao:i.secao, secao_titulo:i.secao_titulo, titulo:i.t, tipo:i.tipo, situacao:r.sit, obs:r.obs, valor:r.valor, unidade:i.un, texto:r.texto, fotos });
+    const fotos = [], refs = [];
+    for (const f of (r.fotos||[])) { let u = await urlFoto(f); if (!u) continue; const e = (r.enq||{})[f]; if (e) u = await enquadrarUrl(u, e).catch(()=>u); fotos.push(u); refs.push(f); }
+    itens.push({ codigo:i.c, secao:i.secao, secao_titulo:i.secao_titulo, titulo:i.t, tipo:i.tipo, situacao:r.sit, obs:r.obs, valor:r.valor, unidade:i.un, texto:r.texto, fotos, refs });
   }
   return { id:v.id, tipo:v.tipo, data_vistoria:v.data_vistoria, local:v.local, latitude:v.latitude, longitude:v.longitude, obra_nome:v.obra_nome, equipamento:v.equipamento||{},
     horimetro: v.horimetro ?? (v.resp['1.3']?.sit!=='na' ? v.resp['1.3']?.valor : null), hodometro: v.hodometro ?? (v.resp['1.4']?.sit!=='na' ? v.resp['1.4']?.valor : null),
@@ -3066,16 +3086,149 @@ async function relDeLocal(v){
 async function relDeServidor(s){
   const caminhos = []; (s.itens||[]).forEach(i=>(i.fotos||[]).forEach(c=>caminhos.push(c))); [s.vistoriador_assinatura, s.representante_assinatura, s.vistoriador_selfie, s.representante_foto].forEach(c=>c && caminhos.push(c));
   const u = await urlsAssinadas(caminhos);
-  return Object.assign({}, s, { itens:(s.itens||[]).map(i=>Object.assign({}, i, { fotos:(i.fotos||[]).map(u).filter(Boolean) })), vistoriador_assinatura:u(s.vistoriador_assinatura), representante_assinatura:u(s.representante_assinatura),
+  const itens = [];
+  for (const i of (s.itens||[])) {
+    const fotos = [], refs = [];
+    for (const c of (i.fotos||[])) { let url = u(c); if (!url) continue; const e = (i.enq||{})[c]; if (e) url = await enquadrarUrl(url, e).catch(()=>url); fotos.push(url); refs.push(c); }
+    itens.push(Object.assign({}, i, { fotos, refs }));
+  }
+  return Object.assign({}, s, { itens, vistoriador_assinatura:u(s.vistoriador_assinatura), representante_assinatura:u(s.representante_assinatura),
     vistoriador_selfie:u(s.vistoriador_selfie), representante_foto:u(s.representante_foto) });
 }
+/* =====================================================================
+   REENQUADRAR FOTO — guarda só os parâmetros (girar, quadro, zoom, posição); a foto original não muda.
+   e = { r: 0|90|180|270, a: 'o'|'4:3'|'3:2'|'16:9'|'1:1', z: 1..4, x: 0..1, y: 0..1 }
+   ===================================================================== */
+const EF_RAZAO = { '4:3': 4/3, '3:2': 3/2, '16:9': 16/9, '1:1': 1 };
+function _efRegiao(rw, rh, e){
+  const ar = EF_RAZAO[e.a] || (rw / rh), z = Math.max(1, e.z || 1);
+  let bw = rw, bh = rw / ar; if (bh > rh) { bh = rh; bw = rh * ar; }
+  const vw = bw / z, vh = bh / z;
+  return { vw, vh, sx: (rw - vw) * (e.x ?? .5), sy: (rh - vh) * (e.y ?? .5), slackW: rw - vw, slackH: rh - vh };
+}
+function _efGirada(im, rot){
+  const q = ((rot || 0) % 360 + 360) % 360, odd = q % 180 !== 0;
+  const w = odd ? im.naturalHeight : im.naturalWidth, h = odd ? im.naturalWidth : im.naturalHeight;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); x.translate(w / 2, h / 2); x.rotate(q * Math.PI / 180); x.drawImage(im, -im.naturalWidth / 2, -im.naturalHeight / 2);
+  return c;
+}
+function _efCarregar(url){
+  return new Promise((ok, falha)=>{ const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = ()=>ok(im); im.onerror = ()=>falha(new Error('Não foi possível abrir a foto.')); im.src = url; });
+}
+const _efCache = {};
+async function enquadrarUrl(url, e){
+  const chave = url + '|' + JSON.stringify(e); if (_efCache[chave]) return _efCache[chave];
+  const im = await _efCarregar(url), base = _efGirada(im, e.r), R = _efRegiao(base.width, base.height, e);
+  const f = Math.min(1, 1600 / Math.max(R.vw, R.vh));
+  const c = document.createElement('canvas'); c.width = Math.round(R.vw * f); c.height = Math.round(R.vh * f);
+  c.getContext('2d').drawImage(base, R.sx, R.sy, R.vw, R.vh, 0, 0, c.width, c.height);
+  const blob = await new Promise(ok=>c.toBlob(ok, 'image/jpeg', 0.9));
+  return (_efCache[chave] = URL.createObjectURL(blob));
+}
+const EF = {
+  s: null,
+  async abrir(cod, k){
+    const refs = _relRefs[cod] || [], ref = refs[k]; if (!ref) return;
+    const loc = Repo.vistoria(_relId), srv = Repo.servidor.find(x=>x.id===_relId);
+    let url, atual;
+    try {
+      if (loc) { url = await urlFoto(ref); atual = (loc.resp[cod] && loc.resp[cod].enq || {})[ref]; }
+      else if (srv) { url = await urlAssinada(ref); const it = (srv.itens||[]).find(x=>x.codigo===cod); atual = it && it.enq && it.enq[ref]; }
+      if (!url) { toast('A foto precisa de internet para abrir.', 'erro'); return; }
+      const im = await _efCarregar(url);
+      this.s = { cod, ref, im, e: Object.assign({ r:0, a:'o', z:1, x:.5, y:.5 }, atual || {}), base: null };
+    } catch (err) { toast(err.message || 'Não foi possível abrir a foto.', 'erro'); return; }
+    let el = document.getElementById('ef');
+    if (!el) { el = document.createElement('div'); el.id = 'ef'; document.body.appendChild(el); }
+    el.innerHTML = `<div class="ef-topo"><button onclick="EF.fechar()" aria-label="Fechar">✕</button><b>Reenquadrar foto</b><button class="ok" id="ef-salvar" onclick="EF.salvar()">Salvar</button></div>
+      <div class="ef-area" id="ef-area"><canvas id="ef-cv"></canvas></div>
+      <div class="ef-ctl">
+        <div class="ef-lin"><button onclick="EF.girar(-90)" aria-label="Girar à esquerda">↺</button><button onclick="EF.girar(90)" aria-label="Girar à direita">↻</button>
+          <input type="range" id="ef-z" min="1" max="4" step="0.02" aria-label="Zoom"/><span id="ef-zv" style="min-width:42px;text-align:right">1,0×</span></div>
+        <div class="ef-lin" id="ef-ar">${[['o','Inteira'],['4:3','4:3'],['3:2','3:2'],['16:9','16:9'],['1:1','1:1']].map(([a,r])=>`<button data-a="${a}" onclick="EF.quadro('${a}')">${r}</button>`).join('')}</div>
+        <div class="ef-dica">Arraste para mover · pinça ou barra para ampliar. O carimbo de data e hora fica na parte de baixo da foto: mantenha-o dentro do quadro.</div>
+        <div class="ef-lin"><button onclick="EF.restaurar()">Restaurar original</button></div></div>`;
+    el.classList.add('aberto'); document.body.style.overflow = 'hidden';
+    document.getElementById('ef-z').oninput = ev=>{ this.s.e.z = Number(ev.target.value); this._desenhar(); };
+    this._gestos(document.getElementById('ef-cv'));
+    this._refazerBase(); requestAnimationFrame(()=>this._desenhar());
+    this._rz = ()=>this._desenhar(); window.addEventListener('resize', this._rz);
+  },
+  _refazerBase(){ this.s.base = _efGirada(this.s.im, this.s.e.r); },
+  _desenhar(){
+    const s = this.s; if (!s) return;
+    const area = document.getElementById('ef-area'), cv = document.getElementById('ef-cv'); if (!area || !cv) return;
+    const R = _efRegiao(s.base.width, s.base.height, s.e), ar = R.vw / R.vh;
+    const mw = Math.max(50, area.clientWidth - 16), mh = Math.max(50, area.clientHeight - 16);
+    let w = mw, h = w / ar; if (h > mh) { h = mh; w = h * ar; }
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.style.width = w + 'px'; cv.style.height = h + 'px'; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.getContext('2d').drawImage(s.base, R.sx, R.sy, R.vw, R.vh, 0, 0, cv.width, cv.height);
+    s.k = R.vw / w;   // pixels da foto por pixel da tela
+    const z = document.getElementById('ef-z'); if (z && Number(z.value) !== s.e.z) z.value = s.e.z;
+    document.getElementById('ef-zv').textContent = s.e.z.toFixed(1).replace('.', ',') + '×';
+    document.querySelectorAll('#ef-ar button').forEach(b=>b.classList.toggle('on', b.dataset.a === s.e.a));
+  },
+  girar(g){ const e = this.s.e; e.r = (((e.r || 0) + g) % 360 + 360) % 360; e.x = .5; e.y = e.a === 'o' ? .5 : 1; this._refazerBase(); this._desenhar(); },
+  quadro(a){ const e = this.s.e; e.a = a; e.z = 1; e.x = .5; e.y = a === 'o' ? .5 : 1; this._desenhar(); },   // com quadro menor que a foto, começa ancorado na base (onde fica o carimbo)
+  restaurar(){ this.s.e = { r:0, a:'o', z:1, x:.5, y:.5 }; this._refazerBase(); this._desenhar(); },
+  _gestos(el){
+    const pts = new Map(); let d0 = 0, z0 = 1, ult = null;
+    const dist = ()=>{ const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+    el.onpointerdown = ev=>{ el.setPointerCapture(ev.pointerId); pts.set(ev.pointerId, { x:ev.clientX, y:ev.clientY }); if (pts.size === 2) { d0 = dist(); z0 = EF.s.e.z; } ult = { x:ev.clientX, y:ev.clientY }; };
+    el.onpointermove = ev=>{
+      if (!pts.has(ev.pointerId) || !EF.s) return; const e = EF.s.e;
+      pts.set(ev.pointerId, { x:ev.clientX, y:ev.clientY });
+      if (pts.size === 2 && d0 > 0) { e.z = Math.max(1, Math.min(4, z0 * dist() / d0)); EF._desenhar(); return; }
+      if (pts.size === 1 && ult) {
+        const R = _efRegiao(EF.s.base.width, EF.s.base.height, e), dx = (ev.clientX - ult.x) * EF.s.k, dy = (ev.clientY - ult.y) * EF.s.k;
+        if (R.slackW > 0.5) e.x = Math.max(0, Math.min(1, (R.sx - dx) / R.slackW));
+        if (R.slackH > 0.5) e.y = Math.max(0, Math.min(1, (R.sy - dy) / R.slackH));
+        ult = { x:ev.clientX, y:ev.clientY }; EF._desenhar();
+      }
+    };
+    const fim = ev=>{ pts.delete(ev.pointerId); d0 = 0; ult = pts.size === 1 ? { ...[...pts.values()][0] } : null; };
+    el.onpointerup = fim; el.onpointercancel = fim;
+  },
+  fechar(){
+    const el = document.getElementById('ef'); if (el) { el.classList.remove('aberto'); el.innerHTML = ''; }
+    document.body.style.overflow = ''; window.removeEventListener('resize', this._rz); this.s = null;
+  },
+  async salvar(){
+    const s = this.s; if (!s) return;
+    const btn = document.getElementById('ef-salvar'); if (btn) btn.disabled = true;
+    const e = { r: s.e.r || 0, a: s.e.a, z: Math.round(s.e.z * 100) / 100, x: Math.round(s.e.x * 1000) / 1000, y: Math.round(s.e.y * 1000) / 1000 };
+    const padrao = e.r === 0 && e.a === 'o' && e.z <= 1;
+    try {
+      const loc = Repo.vistoria(_relId), srv = Repo.servidor.find(x=>x.id===_relId);
+      if (loc) {
+        const r = loc.resp[s.cod]; r.enq = r.enq || {};
+        if (padrao) delete r.enq[s.ref]; else r.enq[s.ref] = e;
+        await Repo.salvar(loc, loc.status === 'concluida' ? true : undefined);   // concluída: sobe de novo com o enquadramento
+        if (loc.status === 'concluida' && online()) Sinc.rodar(true);
+      } else if (srv) {
+        const itens = JSON.parse(JSON.stringify(srv.itens || [])), it = itens.find(x=>x.codigo===s.cod);
+        it.enq = it.enq || {}; if (padrao) delete it.enq[s.ref]; else it.enq[s.ref] = e;
+        const { error } = await sb.from('frota_vistorias').update({ itens }).eq('id', _relId);
+        if (error) throw error;
+        srv.itens = itens;
+      }
+      this.fechar(); toast('Foto reenquadrada', 'sucesso');
+      await abrirRelatorio(_relId, _relDeVist ? _relRascunho : undefined);
+    } catch (err) { if (btn) btn.disabled = false; toast('Não foi possível salvar o enquadramento: ' + traduzErro(err), 'erro'); }
+  }
+};
+document.addEventListener('click', ev=>{
+  const im = ev.target.closest && ev.target.closest('#rel-folha img[data-cod]'); if (im) EF.abrir(im.dataset.cod, Number(im.dataset.k));
+});
 async function relatorioDe(id, rascunho){
   const local = rascunho || Repo.vistoria(id);
   if (local) return await relDeLocal(local);
   const s = Repo.servidor.find(x=>x.id===id);
   return s ? await relDeServidor(s) : null;
 }
-let _relId = null, _relDeVist = false;
+let _relId = null, _relDeVist = false, _relRascunho = null, _relRefs = {};
 async function abrirRelatorio(id, rascunho){
   _relDeVist = !!rascunho; _relId = id;
   mostrarTela('tela-relatorio');
@@ -3086,6 +3239,7 @@ async function abrirRelatorio(id, rascunho){
     if (!v) { folha.innerHTML = '<div style="padding:30px;color:#666">Vistoria não encontrada.</div>'; return; }
     const mobId = (rascunho || Repo.vistoria(id) || Repo.servidor.find(x=>x.id===id))?.vistoria_mob_id;
     const mob = v.tipo==='desmobilizacao' && mobId ? await relatorioDe(mobId).catch(()=>null) : null;
+    _relRascunho = rascunho || null; _relRefs = {}; (v.itens||[]).forEach(i=>{ _relRefs[i.codigo] = i.refs || []; });
     const des = v.tipo==='desmobilizacao';
     document.getElementById('rel-titulo').textContent = des ? 'Relatório de desmobilização' : 'Relatório de mobilização';
     document.getElementById('rel-sub').textContent = v.equipamento?.descricao || '';
